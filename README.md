@@ -2,7 +2,7 @@
 
 **A Python framework for building scalable data lake pipelines with Apache Iceberg and Spark.**
 
-[![Version](https://img.shields.io/badge/version-0.1.0--alpha-blue.svg)](https://pypi.org/project/alur-framework/)
+[![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](https://github.com/ParmenidesSartre/Alur/releases)
 [![Python](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -22,23 +22,49 @@ Alur is a Python package that simplifies building and deploying data lake pipeli
 
 - [Installation](#installation)
 - [Quick Start](#quick-start)
+- [Testing Your Installation](#testing-your-installation)
 - [Core Concepts](#core-concepts)
 - [Usage Examples](#usage-examples)
 - [CLI Commands](#cli-commands)
 - [Deployment](#deployment)
-- [Architecture](#architecture)
+- [Documentation](#documentation)
 - [Contributing](#contributing)
 
 ## Installation
 
+### From Source (Recommended)
+
 ```bash
-pip install alur-framework
+# Clone the repository
+git clone https://github.com/ParmenidesSartre/Alur.git
+cd Alur
+
+# Create virtual environment (recommended)
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install in development mode
+pip install -e .
+
+# Or install with all dependencies
+pip install -e ".[all]"
 ```
 
-**Requirements:**
-- Python 3.8+
-- PySpark 3.3+
-- Java 8 or 11 (for Spark)
+### Requirements
+
+- **Python 3.8+**
+- **Java 8 or 11** (required for PySpark)
+- **PySpark 3.3+** (installed automatically with `[all]` option)
+
+### Verify Installation
+
+```bash
+# Check version
+python -c "import alur; print(alur.__version__)"
+
+# Verify CLI is available
+alur --help
+```
 
 ## Quick Start
 
@@ -59,6 +85,7 @@ my_datalake/
 │   ├── bronze.py        # Raw data table definitions
 │   └── silver.py        # Cleaned data table definitions
 ├── pipelines/
+│   ├── ingest_orders.py # Bronze ingestion pipeline
 │   └── orders.py        # Data transformation pipelines
 └── main.py              # Entry point
 ```
@@ -78,27 +105,12 @@ class OrdersBronze(BronzeTable):
     amount = IntegerField(nullable=False)
     created_at = TimestampField(nullable=False)
 
-    class Meta:
-        partition_by = ["created_at"]
-```
-
-**contracts/silver.py:**
-
-```python
-from alur.core import SilverTable, StringField, IntegerField, TimestampField
-
-class OrdersSilver(SilverTable):
-    """Cleaned and deduplicated orders."""
-
-    order_id = StringField(nullable=False)
-    customer_id = StringField(nullable=False)
-    amount = IntegerField(nullable=False)
-    status = StringField(nullable=False)
-    created_at = TimestampField(nullable=False)
-    updated_at = TimestampField(nullable=False)
+    # Bronze metadata (added automatically by ingestion helpers)
+    _ingested_at = TimestampField(nullable=True)
+    _source_system = StringField(nullable=True)
+    _source_file = StringField(nullable=True)
 
     class Meta:
-        primary_key = ["order_id"]
         partition_by = ["created_at"]
 ```
 
@@ -108,10 +120,13 @@ class OrdersSilver(SilverTable):
 
 ```python
 from alur.decorators import pipeline
+from alur.quality import expect, not_empty, no_nulls_in_column
 from contracts.bronze import OrdersBronze
 from contracts.silver import OrdersSilver
 from pyspark.sql import functions as F
 
+@expect(name="has_data", check_fn=not_empty)
+@expect(name="valid_ids", check_fn=no_nulls_in_column("order_id"))
 @pipeline(
     sources={"orders": OrdersBronze},
     target=OrdersSilver
@@ -128,6 +143,9 @@ def clean_orders(orders):
     # Add status and updated_at
     cleaned = cleaned.withColumn("status", F.lit("processed"))
     cleaned = cleaned.withColumn("updated_at", F.current_timestamp())
+
+    # Drop Bronze metadata
+    cleaned = cleaned.drop("_ingested_at", "_source_system", "_source_file")
 
     return cleaned
 ```
@@ -148,337 +166,237 @@ Data will be stored in `/tmp/alur/`.
 
 ### 5. Deploy to AWS
 
-Deploy with a single command:
-
 ```bash
 alur deploy --env dev
 ```
 
-This automatically:
-- Builds your Python wheel package
-- Generates Terraform infrastructure
-- Provisions AWS resources (S3, Glue, DynamoDB)
-- Uploads your code to S3
+## Testing Your Installation
 
-See [DEPLOY.md](DEPLOY.md) for detailed deployment options.
+### Quick Test
+
+```bash
+# Create a test project
+alur init test_project
+cd test_project
+
+# Run the example pipeline locally (requires Java for Spark)
+python main.py
+```
+
+### Test Without Spark (Verify Import)
+
+```python
+# test_import.py
+from alur import (
+    BronzeTable, SilverTable, GoldTable,
+    StringField, IntegerField, TimestampField,
+    pipeline, expect, schedule,
+    add_bronze_metadata
+)
+
+print("All imports successful!")
+
+# Define a simple table
+class TestTable(BronzeTable):
+    id = StringField(nullable=False)
+    name = StringField(nullable=True)
+
+    class Meta:
+        description = "Test table"
+
+print(f"Table name: {TestTable.get_table_name()}")
+print(f"Fields: {list(TestTable._fields.keys())}")
+```
+
+Run it:
+
+```bash
+python test_import.py
+```
+
+### Full Integration Test (Requires Java)
+
+```python
+# test_full.py
+from alur import (
+    BronzeTable, StringField, IntegerField, TimestampField,
+    pipeline, add_bronze_metadata, get_spark_session
+)
+from pyspark.sql import functions as F
+
+# 1. Define Bronze table
+class TestOrdersBronze(BronzeTable):
+    order_id = StringField(nullable=False)
+    amount = IntegerField(nullable=True)
+    _ingested_at = TimestampField(nullable=True)
+    _source_system = StringField(nullable=True)
+
+# 2. Create Spark session
+spark = get_spark_session()
+
+# 3. Create test data
+test_data = [
+    {"order_id": "ORD-001", "amount": 100},
+    {"order_id": "ORD-002", "amount": 200},
+    {"order_id": "ORD-003", "amount": 150},
+]
+
+df = spark.createDataFrame(test_data)
+
+# 4. Add Bronze metadata
+bronze_df = add_bronze_metadata(
+    df,
+    source_system="test_system",
+    source_file="test_data.json"
+)
+
+# 5. Show results
+print("Bronze data with metadata:")
+bronze_df.show(truncate=False)
+
+print("\nSchema:")
+bronze_df.printSchema()
+
+print("\n✅ Integration test passed!")
+```
+
+Run it:
+
+```bash
+python test_full.py
+```
+
+### Run Unit Tests
+
+```bash
+# From the Alur directory
+pip install pytest
+pytest tests/ -v
+```
 
 ## Core Concepts
 
 ### Table Layers
 
-Alur implements a multi-layer architecture:
-
-- **Bronze Layer** (`BronzeTable`): Raw, immutable data from sources
-  - Format: Parquet
-  - Write mode: Append-only
-
-- **Silver Layer** (`SilverTable`): Cleaned, deduplicated data
-  - Format: Iceberg
-  - Write mode: Merge (ACID upserts)
-  - Requires: `primary_key` definition
-
-- **Gold Layer** (`GoldTable`): Business-level aggregates
-  - Format: Iceberg
-  - Write mode: Configurable (overwrite/merge)
+| Layer | Class | Format | Write Mode | Purpose |
+|-------|-------|--------|------------|---------|
+| Bronze | `BronzeTable` | Parquet | Append | Raw data + metadata |
+| Silver | `SilverTable` | Iceberg | Merge | Cleaned, validated |
+| Gold | `GoldTable` | Iceberg | Overwrite | Business aggregates |
 
 ### Field Types
 
 ```python
 from alur.core import (
-    StringField,
-    IntegerField,
-    LongField,
-    DoubleField,
-    BooleanField,
-    TimestampField,
-    DateField,
-    DecimalField,
-    ArrayField,
-    StructField,
+    StringField,      # VARCHAR/STRING
+    IntegerField,     # INT
+    LongField,        # BIGINT
+    DoubleField,      # DOUBLE
+    BooleanField,     # BOOLEAN
+    TimestampField,   # TIMESTAMP
+    DateField,        # DATE
+    DecimalField,     # DECIMAL(precision, scale)
+    ArrayField,       # ARRAY<element_type>
+    StructField,      # STRUCT<fields>
 )
 ```
 
-### Pipeline Decorator
-
-The `@pipeline` decorator registers transformation functions:
+### Decorators
 
 ```python
-@pipeline(
-    sources={"input1": Table1, "input2": Table2},
-    target=OutputTable,
-    resource_profile="large"  # Optional: for AWS resource sizing
-)
-def my_pipeline(input1, input2):
-    # input1 and input2 are Spark DataFrames
-    return transformed_data
-```
+from alur import pipeline, expect, schedule
 
-### Dependency Resolution
+# Pipeline decorator
+@pipeline(sources={"input": InputTable}, target=OutputTable)
+def transform(input):
+    return input.filter(...)
 
-Alur automatically builds a DAG from your pipelines and executes them in the correct order:
+# Data quality checks
+@expect(name="not_empty", check_fn=not_empty)
+@pipeline(...)
+def validated_transform(input):
+    return input
 
-```bash
-alur validate  # Check for circular dependencies
+# Scheduled execution (AWS EventBridge)
+@schedule(cron="cron(0 2 * * ? *)", description="Daily at 2am")
+@pipeline(...)
+def scheduled_transform(input):
+    return input
 ```
 
 ## CLI Commands
 
-### Project Management
-
 ```bash
-# Initialize new project
-alur init <project_name>
+# Project Management
+alur init <project_name>    # Initialize new project
+alur validate               # Validate pipeline DAG
+alur list                   # List all pipelines
 
-# Validate pipeline DAG
-alur validate
+# Running Pipelines
+alur run <pipeline> --local # Run locally
+alur run <pipeline>         # Run on AWS Glue
+alur logs <pipeline>        # View CloudWatch logs
 
-# Build distributable wheel
-alur build
+# Deployment
+alur deploy --env dev       # Deploy to AWS
+alur infra generate         # Generate Terraform only
+alur destroy --env dev      # Destroy infrastructure
 ```
 
-### Running Pipelines
+## Documentation
 
-```bash
-# Run a specific pipeline locally
-alur run clean_orders --local
-
-# Run all pipelines
-alur run --all
-
-# Run in AWS mode
-alur run clean_orders
-```
-
-### Infrastructure
-
-```bash
-# One-command deployment to AWS
-alur deploy --env dev
-alur deploy --env prod --auto-approve
-
-# Deploy options
-alur deploy --skip-terraform     # Just upload code
-alur deploy --skip-build         # Use existing wheel
-
-# Generate Terraform files only
-alur infra generate
-alur infra generate --output ./infrastructure
-```
-
-## Usage Examples
-
-### Example 1: Bronze to Silver with Deduplication
-
-```python
-from alur.decorators import pipeline
-from pyspark.sql import Window, functions as F
-
-@pipeline(
-    sources={"raw_users": UsersBronze},
-    target=UsersSilver
-)
-def deduplicate_users(raw_users):
-    """Keep only the latest record per user."""
-
-    window = Window.partitionBy("user_id").orderBy(F.desc("updated_at"))
-
-    return raw_users.withColumn("row_num", F.row_number().over(window)) \
-                    .filter(F.col("row_num") == 1) \
-                    .drop("row_num")
-```
-
-### Example 2: Multiple Sources
-
-```python
-@pipeline(
-    sources={
-        "orders": OrdersSilver,
-        "customers": CustomersSilver
-    },
-    target=OrdersEnrichedGold
-)
-def enrich_orders(orders, customers):
-    """Join orders with customer data."""
-
-    return orders.join(customers, "customer_id", "left")
-```
-
-### Example 3: Incremental Processing
-
-```python
-@pipeline(
-    sources={"events": EventsBronze},
-    target=EventsSilver
-)
-def process_events(events):
-    """Process only new events using watermark."""
-
-    from alur.engine import LocalAdapter
-
-    adapter = LocalAdapter()
-    last_processed = adapter.get_state("events_watermark") or "1970-01-01"
-
-    new_events = events.filter(F.col("event_time") > last_processed)
-
-    # Update watermark
-    max_time = new_events.agg(F.max("event_time")).collect()[0][0]
-    if max_time:
-        adapter.set_state("events_watermark", str(max_time))
-
-    return new_events
-```
-
-## Deployment
-
-### One-Command AWS Deployment
-
-Deploy your entire data lake to AWS with a single command:
-
-```bash
-# Full deployment (infrastructure + code)
-alur deploy --env dev
-
-# Production deployment
-alur deploy --env prod --auto-approve
-
-# Just upload code changes
-alur deploy --skip-terraform
-```
-
-The `alur deploy` command:
-1. Builds your Python wheel package
-2. Generates Terraform infrastructure files
-3. Provisions AWS resources (S3, Glue, DynamoDB)
-4. Uploads your code to S3
-5. Provides next steps for running jobs
-
-**See [DEPLOY.md](DEPLOY.md) for complete deployment documentation.**
-
-### Local Development
-
-```python
-from alur.engine import LocalAdapter, PipelineRunner
-
-adapter = LocalAdapter(base_path="/tmp/alur")
-runner = PipelineRunner(adapter)
-runner.run_all()
-```
-
-### Manual AWS Deployment
-
-```python
-from alur.engine import AWSAdapter, PipelineRunner
-
-adapter = AWSAdapter(region="us-east-1")
-runner = PipelineRunner(adapter)
-runner.run_all()
-```
-
-### AWS Glue Job
-
-Create a driver script for Glue:
-
-```python
-# driver.py
-import sys
-from awsglue.utils import getResolvedOptions
-from alur.engine import AWSAdapter, PipelineRunner
-
-# Import your pipelines
-import pipelines
-
-# Get arguments
-args = getResolvedOptions(sys.argv, ['pipeline_name'])
-
-# Run pipeline
-adapter = AWSAdapter()
-runner = PipelineRunner(adapter)
-runner.run_pipeline(args['pipeline_name'])
-```
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────┐
-│                  User Project                       │
-│                                                     │
-│  ┌──────────┐  ┌───────────┐  ┌──────────────┐   │
-│  │contracts/│  │ pipelines/ │  │   config/    │   │
-│  └──────────┘  └───────────┘  └──────────────┘   │
-└─────────────────────────────────────────────────────┘
-                       │
-                       │ uses
-                       ▼
-┌─────────────────────────────────────────────────────┐
-│               Alur Framework                        │
-│                                                     │
-│  ┌──────────┐  ┌───────────┐  ┌──────────────┐   │
-│  │   Core   │  │ Decorators│  │    Engine    │   │
-│  │(Tables)  │  │(Pipeline) │  │(Adapters)    │   │
-│  └──────────┘  └───────────┘  └──────────────┘   │
-└─────────────────────────────────────────────────────┘
-                       │
-                       │
-        ┌──────────────┴──────────────┐
-        │                             │
-        ▼                             ▼
-┌──────────────┐            ┌──────────────────┐
-│    Local     │            │       AWS        │
-│ /tmp/alur/   │            │  S3 + Glue +     │
-│   SQLite     │            │    DynamoDB      │
-└──────────────┘            └──────────────────┘
-```
+| Document | Description |
+|----------|-------------|
+| [docs/DEPLOY.md](docs/DEPLOY.md) | AWS deployment guide |
+| [docs/BRONZE_INGESTION.md](docs/BRONZE_INGESTION.md) | Bronze layer best practices |
+| [docs/DATA_QUALITY.md](docs/DATA_QUALITY.md) | Data quality checks |
+| [docs/LOCAL_TESTING.md](docs/LOCAL_TESTING.md) | Local development |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Development workflow |
+| [CHANGELOG.md](CHANGELOG.md) | Version history |
 
 ## Project Status
 
-**Current Version:** 0.1.0-alpha
+**Current Version:** 0.1.0
 
-**Phase 1 (Completed):**
-- ✅ Core table contracts (BaseTable, BronzeTable, SilverTable, GoldTable)
-- ✅ Field type system
-- ✅ Pipeline decorator and registry
+### Implemented Features
+
+- ✅ Core table contracts (BronzeTable, SilverTable, GoldTable)
+- ✅ Type-safe field system (10+ field types)
+- ✅ Pipeline decorator with dependency injection
+- ✅ Bronze ingestion helpers with metadata
+- ✅ Data quality checks (@expect decorator)
+- ✅ EventBridge scheduling (@schedule decorator)
+- ✅ CLI commands (init, run, deploy, logs, validate, list, destroy)
 - ✅ LocalAdapter for development
-- ✅ SparkSession factory
-- ✅ CLI with `init`, `run`, `validate`, `infra generate` commands
-- ✅ Project templates
+- ✅ AWSAdapter with Glue integration
+- ✅ Auto-generated Terraform infrastructure
+- ✅ One-command deployment (`alur deploy`)
 
-**Phase 2 (Upcoming):**
-- Iceberg MERGE implementation for Silver tables
-- PostgreSQL source connector
-- Watermark/state management
-- DAG visualization
+### Planned Features
 
-**Phase 3 (Planned):**
-- AWSAdapter with full Glue integration
-- Advanced Terraform templates
-- EMR Serverless support
-- `alur deploy` command
-
-**Phase 4 (Future):**
-- More source connectors (MySQL, REST APIs, Kafka)
-- Data quality validations
-- Lineage tracking
+- Schema evolution support
+- More source connectors (MySQL, Kafka, REST APIs)
+- Data lineage tracking
 - Web UI for monitoring
 
 ## Contributing
 
-Contributions are welcome! Please open an issue or submit a pull request.
-
-### Development Setup
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development workflow and guidelines.
 
 ```bash
-git clone https://github.com/alur-framework/alur-framework
-cd alur-framework
+# Development setup
+git clone https://github.com/ParmenidesSartre/Alur.git
+cd Alur
 pip install -e ".[dev]"
 pytest
 ```
 
 ## License
 
-MIT License - see LICENSE file for details.
+MIT License - see [LICENSE](LICENSE) file for details.
 
-## Support
+## Links
 
-- Documentation: [GitHub Wiki](https://github.com/alur-framework/alur-framework/wiki)
-- Issues: [GitHub Issues](https://github.com/alur-framework/alur-framework/issues)
-- Discussions: [GitHub Discussions](https://github.com/alur-framework/alur-framework/discussions)
+- **Repository**: https://github.com/ParmenidesSartre/Alur
+- **Issues**: https://github.com/ParmenidesSartre/Alur/issues
+- **Releases**: https://github.com/ParmenidesSartre/Alur/releases
