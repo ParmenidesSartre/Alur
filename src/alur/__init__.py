@@ -1,8 +1,25 @@
 """
-Alur Framework - A Python framework for building data lake pipelines.
+Alur Framework - Cost-effective data lake framework for small and mid-size companies.
 
-This package provides tools for building scalable data lake pipelines
-with Apache Iceberg and Spark, deployable on AWS infrastructure.
+Alur is a production-ready framework designed to make modern data lake architectures
+accessible to organizations without large data engineering teams. Built on AWS serverless
+infrastructure, Alur eliminates idle costs while providing enterprise-grade capabilities.
+
+The framework simplifies the complexity of building data pipelines by providing:
+- Declarative table definitions with type safety
+- Automated Bronze/Silver/Gold layer architecture
+- One-command deployment to AWS with zero infrastructure management
+- Built-in data quality validation and monitoring
+- Pay-per-use pricing model (zero cost when not running)
+
+Target Audience:
+- Small and mid-size companies building their first data lake
+- Organizations seeking cost-effective alternatives to expensive data platforms
+- Teams without dedicated data infrastructure engineers
+- Companies requiring modern data capabilities without operational overhead
+
+This framework was developed as part of academic research exploring accessible
+data lake architectures for resource-constrained organizations.
 """
 
 from .core import (
@@ -54,7 +71,7 @@ from .ingestion import (
     IncrementalLoader
 )
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     # Table classes

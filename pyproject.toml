@@ -5,22 +5,41 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "alur-framework"
 version = "0.2.0"
-description = "AWS-first data lake framework with zero idle costs. Build pipelines with Iceberg and serverless Spark."
+description = "Cost-effective data lake framework designed for small and mid-size companies. Build production-grade data pipelines on AWS with zero idle costs using serverless Spark and Apache Iceberg."
 readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "MIT"}
 authors = [
     {name = "Alur Framework Contributors"}
 ]
+keywords = [
+    "data-lake",
+    "data-engineering",
+    "etl",
+    "aws",
+    "spark",
+    "iceberg",
+    "serverless",
+    "glue",
+    "data-pipeline",
+    "small-business",
+    "mid-size-company"
+]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
+    "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Topic :: Database",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
     "click>=8.0",
@@ -54,9 +73,11 @@ dev = [
 alur = "alur.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/alur-framework/alur-framework"
-Documentation = "https://github.com/alur-framework/alur-framework"
-Repository = "https://github.com/alur-framework/alur-framework"
+Homepage = "https://github.com/ParmenidesSartre/Alur"
+Documentation = "https://github.com/ParmenidesSartre/Alur/blob/main/README.md"
+Repository = "https://github.com/ParmenidesSartre/Alur"
+Issues = "https://github.com/ParmenidesSartre/Alur/issues"
+Changelog = "https://github.com/ParmenidesSartre/Alur/blob/main/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
 where = ["src"]
