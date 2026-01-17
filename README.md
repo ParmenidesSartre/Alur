@@ -8,6 +8,24 @@
 
 Alur is a production-ready framework for building modern data lake architectures on AWS. Designed with developer experience and operational simplicity in mind, Alur enables data teams to build robust, scalable data pipelines without infrastructure complexity.
 
+## About This Project
+
+Alur was developed as part of master's thesis research exploring accessible data lake architectures for small and mid-size organizations. Traditional data lake platforms often require significant capital investment, dedicated infrastructure teams, and complex operational overhead that place them out of reach for many organizations.
+
+**Target Audience:**
+- Small and mid-size companies building their first data lake
+- Organizations seeking cost-effective alternatives to expensive enterprise platforms
+- Teams without dedicated data infrastructure engineers
+- Companies requiring modern data capabilities without operational complexity
+
+**Core Philosophy:**
+- **Zero Idle Costs** - Built on AWS serverless infrastructure (Glue, S3, Lambda), you only pay when pipelines run
+- **Accessible Technology** - Enterprise-grade capabilities without enterprise complexity
+- **Developer-First** - Python-based declarative API that feels familiar to application developers
+- **Production-Ready** - Built-in best practices for data quality, lineage, and reliability
+
+This framework demonstrates that modern data lake architectures can be both powerful and accessible to organizations of any size.
+
 ## Key Features
 
 - **Declarative Table Definitions** - Define tables using Python classes with type-safe schema management
