@@ -86,6 +86,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **BREAKING: Streamlined Bronze Ingestion API**
+  - Consolidated `load_csv_to_bronze()`, `load_json_to_bronze()`, and `load_parquet_to_bronze()` into single `load_to_bronze()` function
+  - Added automatic format detection from file extension
+  - Simplified `add_bronze_metadata()` parameters: replaced three boolean flags (`add_ingestion_timestamp`, `add_source_system`, `add_source_file`) with single `exclude` list parameter
+  - New API is more concise and easier to use while maintaining all functionality
+
 ### Planned
 - Additional source connectors (MySQL, PostgreSQL, REST APIs, Kafka)
 - Data lineage tracking

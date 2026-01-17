@@ -211,6 +211,85 @@ def build():
         return 1
 
 
+def validate_project_imports():
+    """
+    Validate that all Python imports in the project can be resolved.
+    Returns (success: bool, errors: list).
+    """
+    import sys
+    import importlib.util
+
+    errors = []
+
+    # Add current directory to Python path temporarily
+    project_root = str(Path.cwd())
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+
+    try:
+        # Validate contracts module
+        if Path("contracts").exists():
+            try:
+                import contracts
+                click.echo("  Validating contracts module...")
+
+                # Check __init__.py imports
+                init_file = Path("contracts/__init__.py")
+                if init_file.exists():
+                    with open(init_file, 'r') as f:
+                        content = f.read()
+
+                    # Look for 'from .module import' patterns
+                    import re
+                    imports = re.findall(r'from\s+\.(\w+)\s+import', content)
+
+                    for module_name in imports:
+                        module_file = Path(f"contracts/{module_name}.py")
+                        if not module_file.exists():
+                            errors.append(f"contracts/__init__.py imports '{module_name}' but contracts/{module_name}.py doesn't exist")
+
+            except ImportError as e:
+                errors.append(f"Failed to import contracts module: {str(e)}")
+
+        # Validate pipelines module
+        if Path("pipelines").exists():
+            try:
+                import pipelines
+                click.echo("  Validating pipelines module...")
+
+                # Check __init__.py imports
+                init_file = Path("pipelines/__init__.py")
+                if init_file.exists():
+                    with open(init_file, 'r') as f:
+                        content = f.read()
+
+                    # Look for 'from .module import' patterns
+                    import re
+                    imports = re.findall(r'from\s+\.(\w+)\s+import', content)
+
+                    for module_name in imports:
+                        module_file = Path(f"pipelines/{module_name}.py")
+                        if not module_file.exists():
+                            errors.append(f"pipelines/__init__.py imports '{module_name}' but pipelines/{module_name}.py doesn't exist")
+
+            except ImportError as e:
+                errors.append(f"Failed to import pipelines module: {str(e)}")
+
+        # Try to import config.settings
+        try:
+            import config.settings
+            click.echo("  Validating config.settings...")
+        except ImportError as e:
+            errors.append(f"Failed to import config.settings: {str(e)}")
+
+    finally:
+        # Clean up sys.path
+        if project_root in sys.path:
+            sys.path.remove(project_root)
+
+    return len(errors) == 0, errors
+
+
 @main.command()
 @click.option("--env", default="dev", help="Environment (dev, staging, prod)")
 @click.option("--skip-build", is_flag=True, help="Skip building wheel")
@@ -284,6 +363,17 @@ def deploy(env: str, skip_build: bool, skip_terraform: bool, auto_approve: bool)
             click.echo("[ERROR] pipelines/ directory not found", err=True)
             click.echo("  Create at least one pipeline file in pipelines/", err=True)
             return 1
+
+        # Validate Python imports
+        click.echo("\n  Validating project imports...")
+        success, import_errors = validate_project_imports()
+        if not success:
+            click.echo("\n[ERROR] Import validation failed:", err=True)
+            for error in import_errors:
+                click.echo(f"  - {error}", err=True)
+            click.echo("\nPlease fix these import errors before deploying", err=True)
+            return 1
+        click.echo("  [OK] All imports validated successfully")
 
     except ImportError:
         click.echo("[ERROR] Could not import config/settings.py", err=True)
@@ -415,19 +505,20 @@ def deploy(env: str, skip_build: bool, skip_terraform: bool, auto_approve: bool)
         # Build and upload Alur framework wheel
         import alur
         alur_root = Path(alur.__path__[0]).parent.parent  # Go to Alur project root
+        alur_root_str = str(alur_root)  # Convert to string for subprocess compatibility
 
         click.echo("  Building Alur framework wheel...")
         try:
             result = subprocess.run(
                 ["python", "-m", "build"],
-                cwd=alur_root,
+                cwd=alur_root_str,
                 capture_output=True,
                 text=True,
                 check=True
             )
 
             # Find the framework wheel
-            framework_wheels = list(Path(alur_root / "dist").glob("*.whl"))
+            framework_wheels = list((Path(alur_root_str) / "dist").glob("*.whl"))
             if framework_wheels:
                 framework_wheel = framework_wheels[-1]
                 framework_wheel_name = framework_wheel.name

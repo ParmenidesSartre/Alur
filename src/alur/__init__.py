@@ -49,9 +49,7 @@ from .quality import (
 
 from .ingestion import (
     add_bronze_metadata,
-    load_csv_to_bronze,
-    load_json_to_bronze,
-    load_parquet_to_bronze,
+    load_to_bronze,
     handle_bad_records,
     IncrementalLoader
 )
@@ -95,9 +93,7 @@ __all__ = [
     "freshness_check",
     # Ingestion
     "add_bronze_metadata",
-    "load_csv_to_bronze",
-    "load_json_to_bronze",
-    "load_parquet_to_bronze",
+    "load_to_bronze",
     "handle_bad_records",
     "IncrementalLoader",
     # Engine
