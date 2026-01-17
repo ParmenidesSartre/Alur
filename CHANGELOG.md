@@ -86,13 +86,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-- **BREAKING: Streamlined Bronze Ingestion API**
-  - Consolidated `load_csv_to_bronze()`, `load_json_to_bronze()`, and `load_parquet_to_bronze()` into single `load_to_bronze()` function
-  - Added automatic format detection from file extension
-  - Simplified `add_bronze_metadata()` parameters: replaced three boolean flags (`add_ingestion_timestamp`, `add_source_system`, `add_source_file`) with single `exclude` list parameter
-  - New API is more concise and easier to use while maintaining all functionality
-
 ### Planned
 - Additional source connectors (MySQL, PostgreSQL, REST APIs, Kafka)
 - Data lineage tracking
@@ -102,10 +95,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.2.0] - 2026-01-17
+
+### Changed
+- **BREAKING: Streamlined Bronze Ingestion API**
+  - Consolidated `load_csv_to_bronze()`, `load_json_to_bronze()`, and `load_parquet_to_bronze()` into single `load_to_bronze()` function
+  - Added automatic format detection from file extension
+  - Simplified `add_bronze_metadata()` parameters: replaced three boolean flags (`add_ingestion_timestamp`, `add_source_system`, `add_source_file`) with single `exclude` list parameter
+  - New API is more concise and easier to use while maintaining all functionality
+
+### Added
+- Pre-deployment validation to catch import errors before AWS deployment
+- Import validation checks for broken module references in `__init__.py` files
+- Enhanced error messages in deployment validation
+- Comprehensive validation function to prevent deployment failures
+
+### Fixed
+- PathLib compatibility issues in framework wheel build on Windows
+- Subprocess calls now properly handle Path objects as strings
+- Framework wheel upload failures during deployment
+
+### Improved
+- Updated project templates to use new streamlined API
+- Better deployment reliability with early validation
+- Cleaner codebase with removed redundant documentation
+
+---
+
 ## Version History
 
 | Version | Date | Description |
 |---------|------|-------------|
+| 0.2.0 | 2026-01-17 | Streamlined bronze API (breaking), deployment fixes |
 | 0.1.0 | 2026-01-16 | Initial release with core framework |
 
 ## Migration Guide
