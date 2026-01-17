@@ -9,7 +9,7 @@ from pathlib import Path
 
 
 @click.group()
-@click.version_option(version="0.2.0")
+@click.version_option(version="0.3.0")
 def main():
     """
     Alur Framework - A Python framework for building data lake pipelines.
@@ -74,9 +74,10 @@ def init(project_name: str, path: str):
         click.echo(f"\n[SUCCESS] Project '{project_name}' created successfully!")
         click.echo(f"\nNext steps:")
         click.echo(f"  cd {project_name}")
+        click.echo(f"  # Edit config/settings.py with your AWS details")
         click.echo(f"  # Edit contracts in contracts/")
         click.echo(f"  # Edit pipelines in pipelines/")
-        click.echo(f"  python main.py  # Run locally")
+        click.echo(f"  alur deploy --env dev  # Deploy to AWS")
 
     except Exception as e:
         click.echo(f"Error creating project: {str(e)}", err=True)
@@ -90,14 +91,13 @@ def init(project_name: str, path: str):
 
 @main.command()
 @click.argument("pipeline_name", required=False)
-@click.option("--local", is_flag=True, default=True, help="Run in local mode (default)")
 @click.option("--all", "run_all", is_flag=True, help="Run all pipelines")
-def run(pipeline_name: str, local: bool, run_all: bool):
+def run(pipeline_name: str, run_all: bool):
     """
-    Run a pipeline or all pipelines.
+    Run a pipeline or all pipelines on AWS Glue.
 
     Example:
-        alur run clean_orders --local
+        alur run clean_orders
         alur run --all
     """
     if not run_all and not pipeline_name:
@@ -106,7 +106,7 @@ def run(pipeline_name: str, local: bool, run_all: bool):
 
     # Import dependencies
     try:
-        from .engine import LocalAdapter, AWSAdapter, PipelineRunner
+        from .engine import AWSAdapter, PipelineRunner
 
         # Import user's pipelines to register them
         import pipelines  # noqa: F401
@@ -116,13 +116,9 @@ def run(pipeline_name: str, local: bool, run_all: bool):
         click.echo(f"Details: {str(e)}", err=True)
         return 1
 
-    # Create adapter
-    if local:
-        click.echo("Running in local mode...")
-        adapter = LocalAdapter(base_path="/tmp/alur")
-    else:
-        click.echo("Running in AWS mode...")
-        adapter = AWSAdapter()
+    # Create AWS adapter
+    click.echo("Running on AWS Glue...")
+    adapter = AWSAdapter()
 
     # Create runner
     runner = PipelineRunner(adapter)

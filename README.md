@@ -2,7 +2,7 @@
 
 **A Python framework for building scalable data lake pipelines with Apache Iceberg and Spark.**
 
-[![Version](https://img.shields.io/badge/version-0.2.0-blue.svg)](https://github.com/ParmenidesSartre/Alur/releases)
+[![Version](https://img.shields.io/badge/version-0.3.0-blue.svg)](https://github.com/ParmenidesSartre/Alur/releases)
 [![Python](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -33,7 +33,6 @@ This framework demonstrates that modern data lake architectures can be both powe
 - **Pipeline Orchestration** - Automatic dependency resolution with DAG-based execution
 - **Data Quality Validation** - Built-in quality checks with declarative expectations
 - **AWS-Native Deployment** - One-command deployment with auto-generated Terraform infrastructure
-- **Local Development Mode** - Test pipelines locally without cloud resources
 - **Multi-Layer Architecture** - Bronze/Silver/Gold pattern with Iceberg table format support
 - **EventBridge Scheduling** - Declarative cron-based pipeline scheduling
 
@@ -77,8 +76,8 @@ pip install -e ".[all]"
 # Core framework only
 pip install -e .
 
-# With Spark for local development
-pip install -e ".[local]"
+# With all dependencies
+pip install -e ".[all]"
 
 # Development dependencies (includes testing tools)
 pip install -e ".[dev]"
@@ -112,10 +111,9 @@ my_datalake/
 ├── contracts/
 │   ├── bronze.py        # Raw data table definitions
 │   └── silver.py        # Cleaned data table definitions
-├── pipelines/
-│   ├── ingest_orders.py # Bronze ingestion pipeline
-│   └── orders.py        # Data transformation pipelines
-└── main.py              # Local execution entry point
+└── pipelines/
+    ├── ingest_orders.py # Bronze ingestion pipeline
+    └── orders.py        # Data transformation pipelines
 ```
 
 ### Define Tables
@@ -197,18 +195,6 @@ def clean_orders(orders):
 
     return cleaned
 ```
-
-### Run Locally
-
-```bash
-# Run via main.py
-python main.py
-
-# Or use CLI
-alur run clean_orders --local
-```
-
-Data is stored in `/tmp/alur/` for local development.
 
 ### Deploy to AWS
 
@@ -313,7 +299,6 @@ alur list                   # List all pipelines in project
 ### Pipeline Execution
 
 ```bash
-alur run <pipeline> --local # Run pipeline locally with Spark
 alur run <pipeline>         # Run pipeline on AWS Glue
 alur logs <pipeline>        # View CloudWatch logs for pipeline
 ```
@@ -346,7 +331,6 @@ Comprehensive documentation is available in the `docs/` directory:
 | [docs/DEPLOY.md](docs/DEPLOY.md) | AWS deployment guide and best practices |
 | [docs/BRONZE_INGESTION.md](docs/BRONZE_INGESTION.md) | Bronze layer ingestion patterns |
 | [docs/DATA_QUALITY.md](docs/DATA_QUALITY.md) | Data quality validation framework |
-| [docs/LOCAL_TESTING.md](docs/LOCAL_TESTING.md) | Local development and testing |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Development workflow and guidelines |
 | [CHANGELOG.md](CHANGELOG.md) | Version history and release notes |
 
@@ -386,7 +370,7 @@ mypy src/alur
 
 ## Project Status
 
-**Current Version:** 0.2.0
+**Current Version:** 0.3.0
 
 ### Implemented Features
 
@@ -397,7 +381,6 @@ mypy src/alur
 - Data quality checks via @expect decorator
 - EventBridge scheduling via @schedule decorator
 - Comprehensive CLI (init, run, deploy, logs, validate, list, destroy)
-- LocalAdapter for development without AWS
 - AWSAdapter with AWS Glue integration
 - Auto-generated Terraform infrastructure
 - One-command deployment workflow
