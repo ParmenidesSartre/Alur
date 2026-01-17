@@ -2,95 +2,105 @@
 
 **A Python framework for building scalable data lake pipelines with Apache Iceberg and Spark.**
 
-[![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](https://github.com/ParmenidesSartre/Alur/releases)
+[![Version](https://img.shields.io/badge/version-0.2.0-blue.svg)](https://github.com/ParmenidesSartre/Alur/releases)
 [![Python](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-Alur is a Python package that simplifies building and deploying data lake pipelines. It provides:
+Alur is a production-ready framework for building modern data lake architectures on AWS. Designed with developer experience and operational simplicity in mind, Alur enables data teams to build robust, scalable data pipelines without infrastructure complexity.
 
-- **Declarative table definitions** using Python classes (similar to Django ORM)
-- **Type-safe schema management** with field validators
-- **Pipeline orchestration** with automatic dependency resolution
-- **Bronze ingestion helpers** for loading raw data with metadata tracking
-- **Data quality checks** with automatic validation after pipeline execution
-- **EventBridge scheduling** for automated pipeline runs
-- **Local development mode** for testing without cloud resources
-- **AWS deployment** with auto-generated Terraform infrastructure
-- **Multi-layer architecture** (Bronze/Silver/Gold) built-in
+## Key Features
+
+- **Declarative Table Definitions** - Define tables using Python classes with type-safe schema management
+- **Bronze Ingestion Helpers** - Streamlined API for loading raw data with automatic metadata tracking
+- **Pipeline Orchestration** - Automatic dependency resolution with DAG-based execution
+- **Data Quality Validation** - Built-in quality checks with declarative expectations
+- **AWS-Native Deployment** - One-command deployment with auto-generated Terraform infrastructure
+- **Local Development Mode** - Test pipelines locally without cloud resources
+- **Multi-Layer Architecture** - Bronze/Silver/Gold pattern with Iceberg table format support
+- **EventBridge Scheduling** - Declarative cron-based pipeline scheduling
 
 ## Table of Contents
 
 - [Installation](#installation)
 - [Quick Start](#quick-start)
-- [Testing Your Installation](#testing-your-installation)
 - [Core Concepts](#core-concepts)
-- [Usage Examples](#usage-examples)
-- [CLI Commands](#cli-commands)
-- [Deployment](#deployment)
+- [CLI Reference](#cli-reference)
 - [Documentation](#documentation)
+- [Development](#development)
 - [Contributing](#contributing)
+- [License](#license)
 
 ## Installation
 
-### From Source (Recommended)
+### Requirements
+
+- Python 3.8 or higher
+- Java 8 or 11 (required for PySpark)
+- AWS CLI configured (for deployment)
+
+### From Source
 
 ```bash
 # Clone the repository
 git clone https://github.com/ParmenidesSartre/Alur.git
 cd Alur
 
-# Create virtual environment (recommended)
+# Create and activate virtual environment
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-# Install in development mode
-pip install -e .
-
-# Or install with all dependencies
+# Install with all dependencies
 pip install -e ".[all]"
 ```
 
-### Requirements
+### Install Options
 
-- **Python 3.8+**
-- **Java 8 or 11** (required for PySpark)
-- **PySpark 3.3+** (installed automatically with `[all]` option)
+```bash
+# Core framework only
+pip install -e .
+
+# With Spark for local development
+pip install -e ".[local]"
+
+# Development dependencies (includes testing tools)
+pip install -e ".[dev]"
+```
 
 ### Verify Installation
 
 ```bash
 # Check version
-python -c "import alur; print(alur.__version__)"
+alur --version
 
-# Verify CLI is available
+# View available commands
 alur --help
 ```
 
 ## Quick Start
 
-### 1. Initialize a New Project
+### Initialize a New Project
 
 ```bash
 alur init my_datalake
 cd my_datalake
 ```
 
-This creates a project structure:
+This creates a structured project layout:
 
 ```
 my_datalake/
 ├── config/
-│   └── settings.py      # AWS and environment config
+│   └── settings.py      # AWS and environment configuration
 ├── contracts/
 │   ├── bronze.py        # Raw data table definitions
 │   └── silver.py        # Cleaned data table definitions
 ├── pipelines/
 │   ├── ingest_orders.py # Bronze ingestion pipeline
 │   └── orders.py        # Data transformation pipelines
-└── main.py              # Entry point
+└── main.py              # Local execution entry point
 ```
 
-### 2. Define Your Tables
+### Define Tables
 
 **contracts/bronze.py:**
 
@@ -105,7 +115,7 @@ class OrdersBronze(BronzeTable):
     amount = IntegerField(nullable=False)
     created_at = TimestampField(nullable=False)
 
-    # Bronze metadata (added automatically by ingestion helpers)
+    # Bronze metadata columns (added automatically by ingestion helpers)
     _ingested_at = TimestampField(nullable=True)
     _source_system = StringField(nullable=True)
     _source_file = StringField(nullable=True)
@@ -114,7 +124,30 @@ class OrdersBronze(BronzeTable):
         partition_by = ["created_at"]
 ```
 
-### 3. Create a Pipeline
+### Create Pipelines
+
+**pipelines/ingest_orders.py:**
+
+```python
+from alur.decorators import pipeline
+from alur.ingestion import load_to_bronze
+from alur.engine import get_spark_session
+from contracts.bronze import OrdersBronze
+
+@pipeline(sources={}, target=OrdersBronze)
+def ingest_orders():
+    """Load raw orders from S3 into Bronze layer."""
+    spark = get_spark_session()
+
+    # Format auto-detected from file extension
+    df = load_to_bronze(
+        spark,
+        source_path="s3://landing-zone/orders/*.csv",
+        source_system="sales_db"
+    )
+
+    return df
+```
 
 **pipelines/orders.py:**
 
@@ -127,10 +160,7 @@ from pyspark.sql import functions as F
 
 @expect(name="has_data", check_fn=not_empty)
 @expect(name="valid_ids", check_fn=no_nulls_in_column("order_id"))
-@pipeline(
-    sources={"orders": OrdersBronze},
-    target=OrdersSilver
-)
+@pipeline(sources={"orders": OrdersBronze}, target=OrdersSilver)
 def clean_orders(orders):
     """Clean and validate orders."""
 
@@ -140,139 +170,42 @@ def clean_orders(orders):
         (F.col("amount") > 0)
     )
 
-    # Add status and updated_at
+    # Add processing metadata
     cleaned = cleaned.withColumn("status", F.lit("processed"))
     cleaned = cleaned.withColumn("updated_at", F.current_timestamp())
 
-    # Drop Bronze metadata
+    # Drop Bronze metadata columns
     cleaned = cleaned.drop("_ingested_at", "_source_system", "_source_file")
 
     return cleaned
 ```
 
-### 4. Run Locally
+### Run Locally
 
 ```bash
+# Run via main.py
 python main.py
-```
 
-Or use the CLI:
-
-```bash
+# Or use CLI
 alur run clean_orders --local
 ```
 
-Data will be stored in `/tmp/alur/`.
+Data is stored in `/tmp/alur/` for local development.
 
-### 5. Deploy to AWS
+### Deploy to AWS
 
 ```bash
+# Configure AWS settings in config/settings.py
+# Then deploy with one command
 alur deploy --env dev
 ```
 
-## Testing Your Installation
-
-### Quick Test
-
-```bash
-# Create a test project
-alur init test_project
-cd test_project
-
-# Run the example pipeline locally (requires Java for Spark)
-python main.py
-```
-
-### Test Without Spark (Verify Import)
-
-```python
-# test_import.py
-from alur import (
-    BronzeTable, SilverTable, GoldTable,
-    StringField, IntegerField, TimestampField,
-    pipeline, expect, schedule,
-    add_bronze_metadata
-)
-
-print("All imports successful!")
-
-# Define a simple table
-class TestTable(BronzeTable):
-    id = StringField(nullable=False)
-    name = StringField(nullable=True)
-
-    class Meta:
-        description = "Test table"
-
-print(f"Table name: {TestTable.get_table_name()}")
-print(f"Fields: {list(TestTable._fields.keys())}")
-```
-
-Run it:
-
-```bash
-python test_import.py
-```
-
-### Full Integration Test (Requires Java)
-
-```python
-# test_full.py
-from alur import (
-    BronzeTable, StringField, IntegerField, TimestampField,
-    pipeline, add_bronze_metadata, get_spark_session
-)
-from pyspark.sql import functions as F
-
-# 1. Define Bronze table
-class TestOrdersBronze(BronzeTable):
-    order_id = StringField(nullable=False)
-    amount = IntegerField(nullable=True)
-    _ingested_at = TimestampField(nullable=True)
-    _source_system = StringField(nullable=True)
-
-# 2. Create Spark session
-spark = get_spark_session()
-
-# 3. Create test data
-test_data = [
-    {"order_id": "ORD-001", "amount": 100},
-    {"order_id": "ORD-002", "amount": 200},
-    {"order_id": "ORD-003", "amount": 150},
-]
-
-df = spark.createDataFrame(test_data)
-
-# 4. Add Bronze metadata
-bronze_df = add_bronze_metadata(
-    df,
-    source_system="test_system",
-    source_file="test_data.json"
-)
-
-# 5. Show results
-print("Bronze data with metadata:")
-bronze_df.show(truncate=False)
-
-print("\nSchema:")
-bronze_df.printSchema()
-
-print("\n✅ Integration test passed!")
-```
-
-Run it:
-
-```bash
-python test_full.py
-```
-
-### Run Unit Tests
-
-```bash
-# From the Alur directory
-pip install pytest
-pytest tests/ -v
-```
+This will:
+1. Build Python wheel packages
+2. Generate Terraform infrastructure code
+3. Deploy AWS resources (S3, Glue, DynamoDB, IAM)
+4. Upload code artifacts to S3
+5. Create/update Glue jobs
 
 ## Core Concepts
 
@@ -280,9 +213,9 @@ pytest tests/ -v
 
 | Layer | Class | Format | Write Mode | Purpose |
 |-------|-------|--------|------------|---------|
-| Bronze | `BronzeTable` | Parquet | Append | Raw data + metadata |
-| Silver | `SilverTable` | Iceberg | Merge | Cleaned, validated |
-| Gold | `GoldTable` | Iceberg | Overwrite | Business aggregates |
+| Bronze | `BronzeTable` | Parquet | Append | Raw data with metadata tracking |
+| Silver | `SilverTable` | Iceberg | Merge | Cleaned and validated data |
+| Gold | `GoldTable` | Iceberg | Overwrite | Business-ready aggregates |
 
 ### Field Types
 
@@ -301,102 +234,193 @@ from alur.core import (
 )
 ```
 
-### Decorators
+All fields support `nullable` parameter and optional `description` metadata.
+
+### Pipeline Decorators
 
 ```python
 from alur import pipeline, expect, schedule
 
-# Pipeline decorator
+# Basic pipeline
 @pipeline(sources={"input": InputTable}, target=OutputTable)
 def transform(input):
     return input.filter(...)
 
-# Data quality checks
+# With data quality checks
 @expect(name="not_empty", check_fn=not_empty)
-@pipeline(...)
+@expect(name="valid_ids", check_fn=no_nulls_in_column("order_id"))
+@pipeline(sources={"input": InputTable}, target=OutputTable)
 def validated_transform(input):
-    return input
+    return input.transform(...)
 
-# Scheduled execution (AWS EventBridge)
-@schedule(cron="cron(0 2 * * ? *)", description="Daily at 2am")
-@pipeline(...)
+# With scheduled execution
+@schedule(cron="cron(0 2 * * ? *)", description="Daily at 2am UTC")
+@pipeline(sources={"input": InputTable}, target=OutputTable)
 def scheduled_transform(input):
-    return input
+    return input.transform(...)
 ```
 
-## CLI Commands
+### Bronze Ingestion API
+
+```python
+from alur.ingestion import load_to_bronze, add_bronze_metadata
+
+# Auto-detection of format from file extension
+df = load_to_bronze(
+    spark,
+    source_path="s3://bucket/data/*.csv",
+    source_system="sales_db",
+    options={"header": "true"}
+)
+
+# Manual metadata addition
+bronze_df = add_bronze_metadata(
+    df,
+    source_system="api",
+    exclude=["_source_file"],  # Exclude irrelevant metadata
+    custom_metadata={"_api_version": "v2"}
+)
+```
+
+## CLI Reference
+
+### Project Management
 
 ```bash
-# Project Management
 alur init <project_name>    # Initialize new project
-alur validate               # Validate pipeline DAG
-alur list                   # List all pipelines
+alur validate               # Validate pipeline DAG and dependencies
+alur list                   # List all pipelines in project
+```
 
-# Running Pipelines
-alur run <pipeline> --local # Run locally
-alur run <pipeline>         # Run on AWS Glue
-alur logs <pipeline>        # View CloudWatch logs
+### Pipeline Execution
 
-# Deployment
-alur deploy --env dev       # Deploy to AWS
-alur infra generate         # Generate Terraform only
-alur destroy --env dev      # Destroy infrastructure
+```bash
+alur run <pipeline> --local # Run pipeline locally with Spark
+alur run <pipeline>         # Run pipeline on AWS Glue
+alur logs <pipeline>        # View CloudWatch logs for pipeline
+```
+
+### Deployment
+
+```bash
+alur build                  # Build Python wheel package
+alur infra generate         # Generate Terraform files
+alur deploy --env dev       # Full deployment (build + infra + upload)
+alur deploy --auto-approve  # Deploy without confirmation prompts
+alur destroy --env dev      # Destroy AWS infrastructure
+```
+
+### Options
+
+```bash
+# Deploy with specific flags
+alur deploy --skip-build         # Skip wheel building
+alur deploy --skip-terraform     # Skip Terraform apply
+alur deploy --auto-approve       # Auto-approve Terraform changes
 ```
 
 ## Documentation
 
+Comprehensive documentation is available in the `docs/` directory:
+
 | Document | Description |
 |----------|-------------|
-| [docs/DEPLOY.md](docs/DEPLOY.md) | AWS deployment guide |
-| [docs/BRONZE_INGESTION.md](docs/BRONZE_INGESTION.md) | Bronze layer best practices |
-| [docs/DATA_QUALITY.md](docs/DATA_QUALITY.md) | Data quality checks |
-| [docs/LOCAL_TESTING.md](docs/LOCAL_TESTING.md) | Local development |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | Development workflow |
-| [CHANGELOG.md](CHANGELOG.md) | Version history |
+| [docs/DEPLOY.md](docs/DEPLOY.md) | AWS deployment guide and best practices |
+| [docs/BRONZE_INGESTION.md](docs/BRONZE_INGESTION.md) | Bronze layer ingestion patterns |
+| [docs/DATA_QUALITY.md](docs/DATA_QUALITY.md) | Data quality validation framework |
+| [docs/LOCAL_TESTING.md](docs/LOCAL_TESTING.md) | Local development and testing |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Development workflow and guidelines |
+| [CHANGELOG.md](CHANGELOG.md) | Version history and release notes |
 
-## Project Status
+## Development
 
-**Current Version:** 0.1.0
-
-### Implemented Features
-
-- ✅ Core table contracts (BronzeTable, SilverTable, GoldTable)
-- ✅ Type-safe field system (10+ field types)
-- ✅ Pipeline decorator with dependency injection
-- ✅ Bronze ingestion helpers with metadata
-- ✅ Data quality checks (@expect decorator)
-- ✅ EventBridge scheduling (@schedule decorator)
-- ✅ CLI commands (init, run, deploy, logs, validate, list, destroy)
-- ✅ LocalAdapter for development
-- ✅ AWSAdapter with Glue integration
-- ✅ Auto-generated Terraform infrastructure
-- ✅ One-command deployment (`alur deploy`)
-
-### Planned Features
-
-- Schema evolution support
-- More source connectors (MySQL, Kafka, REST APIs)
-- Data lineage tracking
-- Web UI for monitoring
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development workflow and guidelines.
+### Setting Up Development Environment
 
 ```bash
-# Development setup
+# Clone and install with development dependencies
 git clone https://github.com/ParmenidesSartre/Alur.git
 cd Alur
 pip install -e ".[dev]"
-pytest
 ```
+
+### Running Tests
+
+```bash
+# Run all tests
+pytest tests/ -v
+
+# Run with coverage
+pytest tests/ --cov=alur --cov-report=html
+```
+
+### Code Quality
+
+```bash
+# Format code
+black src/alur
+
+# Sort imports
+isort src/alur
+
+# Type checking
+mypy src/alur
+```
+
+## Project Status
+
+**Current Version:** 0.2.0
+
+### Implemented Features
+
+- Core table contracts (BronzeTable, SilverTable, GoldTable)
+- Type-safe field system with 10+ field types
+- Pipeline decorator with automatic dependency injection
+- Streamlined bronze ingestion API with format auto-detection
+- Data quality checks via @expect decorator
+- EventBridge scheduling via @schedule decorator
+- Comprehensive CLI (init, run, deploy, logs, validate, list, destroy)
+- LocalAdapter for development without AWS
+- AWSAdapter with AWS Glue integration
+- Auto-generated Terraform infrastructure
+- One-command deployment workflow
+- Pre-deployment validation and error checking
+
+### Roadmap
+
+- Schema evolution support for Iceberg tables
+- Additional source connectors (MySQL, PostgreSQL, Kafka, REST APIs)
+- Data lineage tracking and visualization
+- Web UI for pipeline monitoring
+- Cost optimization features
+- Enhanced observability and logging
+
+## Contributing
+
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for development workflow, coding standards, and pull request guidelines.
+
+### Quick Contribution Guide
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/your-feature`)
+3. Make your changes with tests
+4. Run tests and code quality checks
+5. Submit a pull request
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
 ## Links
 
-- **Repository**: https://github.com/ParmenidesSartre/Alur
-- **Issues**: https://github.com/ParmenidesSartre/Alur/issues
+- **GitHub Repository**: https://github.com/ParmenidesSartre/Alur
+- **Issue Tracker**: https://github.com/ParmenidesSartre/Alur/issues
 - **Releases**: https://github.com/ParmenidesSartre/Alur/releases
+- **Changelog**: https://github.com/ParmenidesSartre/Alur/blob/main/CHANGELOG.md
+
+## Support
+
+For questions, bug reports, or feature requests, please open an issue on GitHub.
+
+---
+
+Built with Apache Spark, Apache Iceberg, and AWS Glue.
