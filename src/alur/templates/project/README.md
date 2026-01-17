@@ -6,10 +6,9 @@ This project was generated using the Alur Framework.
 
 ```
 .
-├── config/          # Configuration files
+├── config/          # AWS configuration
 ├── contracts/       # Table definitions (Bronze, Silver, Gold)
-├── pipelines/       # Data transformation pipelines
-└── main.py          # Main entry point
+└── pipelines/       # Data transformation pipelines
 ```
 
 ## Getting Started
@@ -20,49 +19,58 @@ This project was generated using the Alur Framework.
 pip install alur-framework
 ```
 
-### 2. Define Your Tables
+### 2. Configure AWS Settings
+
+Edit `config/settings.py` with your AWS account details:
+- AWS region
+- S3 bucket names (must be globally unique)
+- Glue database name
+- DynamoDB state table name
+
+### 3. Define Your Tables
 
 Edit files in `contracts/` to define your data lake tables:
 - `bronze.py` - Raw data tables
 - `silver.py` - Cleaned, deduplicated tables
 - `gold.py` - Business-level aggregates (optional)
 
-### 3. Create Pipelines
+### 4. Create Pipelines
 
 Add transformation logic in `pipelines/` using the `@pipeline` decorator.
 
-### 4. Run Locally
-
-```bash
-python main.py
-```
-
-This will execute all pipelines using the LocalAdapter (data stored in `/tmp/alur`).
-
 ### 5. Deploy to AWS
 
-Generate Terraform infrastructure:
+Deploy your project with one command:
 
 ```bash
-alur infra generate
-cd terraform
-terraform init
-terraform apply
+alur deploy --env dev
 ```
 
-Deploy your code:
+This will:
+1. Build Python wheel packages
+2. Generate Terraform infrastructure
+3. Deploy AWS resources (S3, Glue, DynamoDB, IAM)
+4. Upload code to S3
+5. Create/update Glue jobs
+
+### 6. Run Pipelines
+
+Execute pipelines on AWS Glue:
 
 ```bash
-alur deploy --env production
+alur run clean_orders
+alur logs clean_orders  # View CloudWatch logs
 ```
 
 ## Example Pipeline
 
 ```python
 from alur.decorators import pipeline
+from alur.quality import expect, not_empty
 from contracts.bronze import OrdersBronze
 from contracts.silver import OrdersSilver
 
+@expect(name="has_data", check_fn=not_empty)
 @pipeline(
     sources={"orders": OrdersBronze},
     target=OrdersSilver
@@ -73,4 +81,4 @@ def clean_orders(orders):
 
 ## Documentation
 
-For more information, visit: https://github.com/alur-framework/alur-framework
+For more information, visit: https://github.com/ParmenidesSartre/Alur

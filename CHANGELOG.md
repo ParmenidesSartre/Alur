@@ -95,6 +95,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.3.0] - 2026-01-17
+
+### Changed
+- **BREAKING: Removed Local Testing Capabilities**
+  - Removed `LocalAdapter` - framework is now AWS-only
+  - Removed `--local` flag from `alur run` command
+  - Removed `main.py` from project templates
+  - Removed `local` optional dependency from pyproject.toml
+  - Deleted docs/LOCAL_TESTING.md
+
+### Rationale
+Alur is designed as an AWS-native serverless framework. Local testing introduced complexity
+and maintenance overhead without providing significant value for the target use case.
+Users building data lakes on AWS benefit from testing directly in the cloud environment
+where pipelines will run in production.
+
+### Migration
+If you were using `alur run <pipeline> --local`:
+- Use `alur run <pipeline>` instead (runs on AWS Glue)
+- All pipelines now execute on AWS infrastructure
+- No local Spark installation required
+
+---
+
 ## [0.2.0] - 2026-01-17
 
 ### Changed
@@ -126,6 +150,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Date | Description |
 |---------|------|-------------|
+| 0.3.0 | 2026-01-17 | Removed local testing (breaking), AWS-only framework |
 | 0.2.0 | 2026-01-17 | Streamlined bronze API (breaking), deployment fixes |
 | 0.1.0 | 2026-01-16 | Initial release with core framework |
 

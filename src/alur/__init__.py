@@ -42,7 +42,6 @@ from .core import (
 from .decorators import pipeline, PipelineRegistry
 
 from .engine import (
-    LocalAdapter,
     AWSAdapter,
     PipelineRunner,
     get_spark_session,
@@ -71,7 +70,7 @@ from .ingestion import (
     IncrementalLoader
 )
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 __all__ = [
     # Table classes
@@ -114,7 +113,6 @@ __all__ = [
     "handle_bad_records",
     "IncrementalLoader",
     # Engine
-    "LocalAdapter",
     "AWSAdapter",
     "PipelineRunner",
     "get_spark_session",
