@@ -17,9 +17,7 @@ def add_bronze_metadata(
     df: DataFrame,
     source_system: Optional[str] = None,
     source_file: Optional[str] = None,
-    add_ingestion_timestamp: bool = True,
-    add_source_system: bool = True,
-    add_source_file: bool = True,
+    exclude: Optional[List[str]] = None,
     custom_metadata: Optional[Dict[str, Any]] = None
 ) -> DataFrame:
     """
@@ -35,9 +33,7 @@ def add_bronze_metadata(
         df: Input DataFrame to add metadata to
         source_system: Name of the source system
         source_file: Source file name or identifier
-        add_ingestion_timestamp: Add _ingested_at timestamp column
-        add_source_system: Add _source_system column
-        add_source_file: Add _source_file column
+        exclude: List of metadata columns to exclude (e.g., ['_source_file', '_ingested_at'])
         custom_metadata: Dictionary of custom metadata columns to add
 
     Returns:
@@ -51,25 +47,33 @@ def add_bronze_metadata(
         ...     source_file="orders_2024_01_15.csv"
         ... )
         >>> # Result has: _ingested_at, _source_system, _source_file columns
+        >>>
+        >>> # Exclude specific metadata columns
+        >>> bronze_df = add_bronze_metadata(
+        ...     api_df,
+        ...     source_system="payments_api",
+        ...     exclude=["_source_file"]  # Not applicable for API data
+        ... )
     """
     result_df = df
+    exclude = exclude or []
 
     # Add ingestion timestamp
-    if add_ingestion_timestamp:
+    if "_ingested_at" not in exclude:
         result_df = result_df.withColumn(
             "_ingested_at",
             F.current_timestamp()
         )
 
     # Add source system
-    if add_source_system and source_system:
+    if "_source_system" not in exclude and source_system:
         result_df = result_df.withColumn(
             "_source_system",
             F.lit(source_system)
         )
 
     # Add source file
-    if add_source_file and source_file:
+    if "_source_file" not in exclude and source_file:
         result_df = result_df.withColumn(
             "_source_file",
             F.lit(source_file)
@@ -83,163 +87,125 @@ def add_bronze_metadata(
     return result_df
 
 
-def load_csv_to_bronze(
+def _merge_options(default_options: Dict[str, str], user_options: Optional[Dict[str, str]]) -> Dict[str, str]:
+    """Helper to merge default and user options."""
+    return {**default_options, **(user_options or {})}
+
+
+def _detect_format(source_path: str) -> str:
+    """Auto-detect file format from path extension."""
+    path_lower = source_path.lower()
+    if path_lower.endswith('.csv') or '*.csv' in path_lower:
+        return 'csv'
+    elif path_lower.endswith('.json') or '*.json' in path_lower:
+        return 'json'
+    elif path_lower.endswith('.parquet') or '*.parquet' in path_lower:
+        return 'parquet'
+    else:
+        raise ValueError(
+            f"Cannot auto-detect format from path: {source_path}. "
+            "Please specify format explicitly using format='csv'|'json'|'parquet'"
+        )
+
+
+def load_to_bronze(
     spark: SparkSession,
     source_path: str,
     source_system: str,
+    format: Optional[str] = None,
     options: Optional[Dict[str, str]] = None,
     schema: Optional[StructType] = None,
-    add_metadata: bool = True
+    exclude_metadata: Optional[List[str]] = None,
+    custom_metadata: Optional[Dict[str, Any]] = None
 ) -> DataFrame:
     """
-    Load CSV files into Bronze layer with standard metadata.
+    Load files into Bronze layer with standard metadata.
+
+    Supports CSV, JSON, and Parquet formats with automatic format detection.
 
     Args:
         spark: SparkSession instance
-        source_path: S3 or local path to CSV file(s). Supports wildcards (*.csv)
+        source_path: S3 or local path to file(s). Supports wildcards (*.csv, *.json, etc.)
         source_system: Name of source system for metadata
-        options: CSV reader options (header, delimiter, etc.)
-        schema: Optional schema for CSV reading
-        add_metadata: Whether to add Bronze metadata columns
+        format: File format ('csv', 'json', 'parquet'). Auto-detected from path if not provided.
+        options: Format-specific reader options (e.g., header, delimiter for CSV)
+        schema: Optional schema for reading (not applicable to Parquet)
+        exclude_metadata: List of metadata columns to exclude (e.g., ['_source_file'])
+        custom_metadata: Dictionary of custom metadata columns to add
 
     Returns:
         DataFrame ready for Bronze layer with metadata
 
-    Example:
-        >>> df = load_csv_to_bronze(
+    Examples:
+        >>> # CSV with auto-detection
+        >>> df = load_to_bronze(
         ...     spark,
         ...     source_path="s3://landing/orders/*.csv",
-        ...     source_system="sales_db",
-        ...     options={"header": "true", "inferSchema": "true"}
+        ...     source_system="sales_db"
         ... )
-    """
-    # Default CSV options
-    default_options = {
-        "header": "true",
-        "inferSchema": "true",
-        "mode": "PERMISSIVE"  # Handle bad records
-    }
-
-    # Merge with user options
-    csv_options = {**default_options, **(options or {})}
-
-    # Read CSV
-    reader = spark.read.options(**csv_options)
-
-    if schema:
-        reader = reader.schema(schema)
-
-    df = reader.csv(source_path)
-
-    # Add metadata
-    if add_metadata:
-        # Extract filename from path for metadata
-        source_file = os.path.basename(source_path)
-        df = add_bronze_metadata(
-            df,
-            source_system=source_system,
-            source_file=source_file
-        )
-
-    return df
-
-
-def load_json_to_bronze(
-    spark: SparkSession,
-    source_path: str,
-    source_system: str,
-    options: Optional[Dict[str, str]] = None,
-    schema: Optional[StructType] = None,
-    add_metadata: bool = True,
-    multiline: bool = False
-) -> DataFrame:
-    """
-    Load JSON files into Bronze layer with standard metadata.
-
-    Args:
-        spark: SparkSession instance
-        source_path: S3 or local path to JSON file(s). Supports wildcards (*.json)
-        source_system: Name of source system for metadata
-        options: JSON reader options
-        schema: Optional schema for JSON reading
-        add_metadata: Whether to add Bronze metadata columns
-        multiline: Whether JSON files are multiline format
-
-    Returns:
-        DataFrame ready for Bronze layer with metadata
-
-    Example:
-        >>> df = load_json_to_bronze(
+        >>>
+        >>> # JSON with explicit format and options
+        >>> df = load_to_bronze(
         ...     spark,
-        ...     source_path="s3://landing/events/*.json",
+        ...     source_path="s3://landing/events.json",
         ...     source_system="event_api",
-        ...     multiline=True
+        ...     format="json",
+        ...     options={"multiLine": "true"}
         ... )
-    """
-    # Default JSON options
-    default_options = {
-        "mode": "PERMISSIVE",
-        "multiLine": "true" if multiline else "false"
-    }
-
-    # Merge with user options
-    json_options = {**default_options, **(options or {})}
-
-    # Read JSON
-    reader = spark.read.options(**json_options)
-
-    if schema:
-        reader = reader.schema(schema)
-
-    df = reader.json(source_path)
-
-    # Add metadata
-    if add_metadata:
-        source_file = os.path.basename(source_path)
-        df = add_bronze_metadata(
-            df,
-            source_system=source_system,
-            source_file=source_file
-        )
-
-    return df
-
-
-def load_parquet_to_bronze(
-    spark: SparkSession,
-    source_path: str,
-    source_system: str,
-    add_metadata: bool = True
-) -> DataFrame:
-    """
-    Load Parquet files into Bronze layer with standard metadata.
-
-    Args:
-        spark: SparkSession instance
-        source_path: S3 or local path to Parquet file(s)
-        source_system: Name of source system for metadata
-        add_metadata: Whether to add Bronze metadata columns
-
-    Returns:
-        DataFrame ready for Bronze layer with metadata
-
-    Example:
-        >>> df = load_parquet_to_bronze(
+        >>>
+        >>> # With custom metadata and exclusions
+        >>> df = load_to_bronze(
         ...     spark,
         ...     source_path="s3://landing/exports/*.parquet",
-        ...     source_system="data_export"
+        ...     source_system="data_export",
+        ...     exclude_metadata=["_source_file"],
+        ...     custom_metadata={"_batch_id": "batch_001"}
         ... )
     """
-    df = spark.read.parquet(source_path)
+    # Auto-detect format if not specified
+    file_format = format.lower() if format else _detect_format(source_path)
+
+    # Format-specific loading
+    if file_format == 'csv':
+        default_options = {
+            "header": "true",
+            "inferSchema": "true",
+            "mode": "PERMISSIVE"
+        }
+        merged_options = _merge_options(default_options, options)
+        reader = spark.read.options(**merged_options)
+        if schema:
+            reader = reader.schema(schema)
+        df = reader.csv(source_path)
+
+    elif file_format == 'json':
+        default_options = {
+            "mode": "PERMISSIVE",
+        }
+        merged_options = _merge_options(default_options, options)
+        reader = spark.read.options(**merged_options)
+        if schema:
+            reader = reader.schema(schema)
+        df = reader.json(source_path)
+
+    elif file_format == 'parquet':
+        df = spark.read.parquet(source_path)
+
+    else:
+        raise ValueError(
+            f"Unsupported format: {file_format}. "
+            "Supported formats: 'csv', 'json', 'parquet'"
+        )
 
     # Add metadata
-    if add_metadata:
-        source_file = os.path.basename(source_path)
-        df = add_bronze_metadata(
-            df,
-            source_system=source_system,
-            source_file=source_file
-        )
+    source_file = os.path.basename(source_path)
+    df = add_bronze_metadata(
+        df,
+        source_system=source_system,
+        source_file=source_file,
+        exclude=exclude_metadata,
+        custom_metadata=custom_metadata
+    )
 
     return df
 
@@ -396,7 +362,7 @@ class IncrementalLoader:
             >>> df = loader.load_new_files(
             ...     source_path="s3://landing/orders/*.csv",
             ...     source_name="orders_csv",
-            ...     loader_fn=lambda path: load_csv_to_bronze(spark, path, "sales_db")
+            ...     loader_fn=lambda path: load_to_bronze(spark, path, "sales_db")
             ... )
         """
         # Get last watermark
@@ -465,10 +431,8 @@ class IncrementalLoader:
 __all__ = [
     # Metadata helpers
     "add_bronze_metadata",
-    # File loaders
-    "load_csv_to_bronze",
-    "load_json_to_bronze",
-    "load_parquet_to_bronze",
+    # Unified file loader
+    "load_to_bronze",
     # Bad records handling
     "handle_bad_records",
     # Incremental loading

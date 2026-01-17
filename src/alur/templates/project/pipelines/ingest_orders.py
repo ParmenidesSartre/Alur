@@ -6,7 +6,7 @@ Bronze philosophy: Raw data as-is + metadata. NO transformations.
 """
 
 from alur.decorators import pipeline
-from alur.ingestion import load_csv_to_bronze
+from alur.ingestion import load_to_bronze
 from alur.engine import get_spark_session
 from contracts.bronze import OrdersBronze
 
@@ -28,7 +28,8 @@ def ingest_orders():
     spark = get_spark_session()
 
     # Load CSV files with automatic Bronze metadata
-    df = load_csv_to_bronze(
+    # Format is auto-detected from file extension
+    df = load_to_bronze(
         spark,
         source_path="s3://landing-zone/orders/*.csv",
         source_system="sales_db",
@@ -60,7 +61,7 @@ def ingest_orders_manual():
         inferSchema=True
     )
 
-    # Manually add Bronze metadata
+    # Manually add Bronze metadata with custom fields
     bronze_df = add_bronze_metadata(
         raw_df,
         source_system="sales_db",
@@ -68,6 +69,33 @@ def ingest_orders_manual():
         custom_metadata={
             "_batch_id": "batch_001",
             "_environment": "production"
+        }
+    )
+
+    return bronze_df
+
+
+# Example: Exclude specific metadata columns
+@pipeline(sources={}, target=OrdersBronze)
+def ingest_orders_api():
+    """
+    Load orders from API with selective metadata.
+    """
+    from alur.ingestion import add_bronze_metadata
+
+    spark = get_spark_session()
+
+    # Simulate API data (not from files)
+    api_df = spark.read.json("s3://api-responses/orders/*.json")
+
+    # Add metadata but exclude _source_file (not applicable for API data)
+    bronze_df = add_bronze_metadata(
+        api_df,
+        source_system="payments_api",
+        exclude=["_source_file"],
+        custom_metadata={
+            "_api_version": "v2",
+            "_request_id": "req_12345"
         }
     )
 
