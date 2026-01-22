@@ -33,9 +33,49 @@ The Bronze layer is the **raw data landing zone** in the medallion architecture.
 
 ---
 
+## Production Features
+
+Alur's bronze ingestion includes production-grade features for reliability and cost-effectiveness:
+
+### 1. Schema Validation
+
+Validate incoming data against table contracts before loading:
+
+```python
+df = load_to_bronze(
+    spark,
+    source_path="s3://landing/orders/*.csv",
+    source_system="sales_db",
+    target=OrdersBronze,  # Validates schema
+    strict_mode=True      # Fail on mismatch
+)
+```
+
+**Benefits:**
+- Catch schema changes early (before bad data enters lake)
+- Fail-fast prevents expensive downstream errors
+- Clear error messages for troubleshooting
+
+### 2. Built-in Logging & Metrics
+
+Automatic logging of ingestion metrics:
+
+```
+INFO: Starting bronze ingestion from s3://landing/orders/*.csv
+INFO: Source system: sales_db, Target: OrdersBronze
+INFO: Detected format: csv
+INFO: Bronze ingestion completed successfully
+INFO: Rows loaded: 15,000
+INFO: Duration: 12.34s
+INFO: Throughput: 1,215 rows/sec
+INFO: Marked file as processed in state tracker
+```
+
+---
+
 ## Standard Bronze Metadata
 
-Every Bronze table should include these metadata fields:
+Every Bronze table includes these metadata fields:
 
 | Field | Type | Purpose | Example |
 |---|---|---|---|
@@ -53,14 +93,10 @@ Optional custom metadata:
 
 ## Quick Start
 
-### 1. Basic CSV Ingestion
+### 1. Define Bronze Table Contract
 
 ```python
 from alur.core import BronzeTable, StringField, IntegerField, TimestampField
-from alur.decorators import pipeline
-from alur.ingestion import load_csv_to_bronze
-from alur.engine import get_spark_session
-
 
 class OrdersBronze(BronzeTable):
     """Raw orders from sales system."""
@@ -70,7 +106,7 @@ class OrdersBronze(BronzeTable):
     amount = IntegerField(nullable=True)
     created_at = TimestampField(nullable=True)
 
-    # Metadata fields
+    # Metadata fields (added automatically by load_to_bronze)
     _ingested_at = TimestampField(nullable=True)
     _source_system = StringField(nullable=True)
     _source_file = StringField(nullable=True)
@@ -78,515 +114,403 @@ class OrdersBronze(BronzeTable):
     class Meta:
         partition_by = ["created_at"]
         description = "Raw orders from sales database"
+```
 
+### 2. Create Production Ingestion Pipeline
+
+```python
+from alur.decorators import pipeline
+from alur.ingestion import load_to_bronze
+from alur.engine import get_spark_session
 
 @pipeline(sources={}, target=OrdersBronze)
 def ingest_orders():
-    """Load orders CSV into Bronze."""
+    """
+    Production pattern: Bronze ingestion with schema validation.
+    """
     spark = get_spark_session()
 
-    df = load_csv_to_bronze(
+    df = load_to_bronze(
         spark,
         source_path="s3://landing-zone/orders/*.csv",
         source_system="sales_db",
-        options={"header": "true", "inferSchema": "true"}
+        target=OrdersBronze,       # Schema validation
+        validate=True,             # Enable validation
+        strict_mode=True,          # Fail on schema mismatch
     )
 
     return df
 ```
 
-**What happens:**
-1. Reads CSV files from S3
-2. Adds `_ingested_at` (current timestamp)
-3. Adds `_source_system` ("sales_db")
-4. Adds `_source_file` (filename)
-5. Returns DataFrame ready for Bronze
+### 3. Deploy and Run
+
+```bash
+# Deploy to AWS
+alur deploy --env dev
+
+# Trigger manually:
+alur run ingest_orders
+
+# View logs
+alur logs ingest_orders
+```
 
 ---
 
-## Ingestion Helpers
+## API Reference
+
+### `load_to_bronze()`
+
+Unified function for loading data into Bronze layer with automatic metadata and safety features.
+
+```python
+def load_to_bronze(
+    spark: SparkSession,
+    source_path: str,
+    source_system: str,
+    target: Optional[Type] = None,
+    format: Optional[str] = None,
+    options: Optional[Dict[str, str]] = None,
+    schema: Optional[StructType] = None,
+    exclude_metadata: Optional[List[str]] = None,
+    custom_metadata: Optional[Dict[str, Any]] = None,
+    validate: bool = True,
+    strict_mode: bool = True,
+    check_duplicates: bool = True,
+    force_reprocess: bool = False
+) -> DataFrame:
+```
+
+**Parameters:**
+
+- `spark` - SparkSession instance
+- `source_path` - S3 or local path to files (supports wildcards: `*.csv`, `*.json`)
+- `source_system` - Name of source system for metadata
+- `target` - Table contract class for schema validation (e.g., `OrdersBronze`)
+- `format` - File format ('csv', 'json', 'parquet'). Auto-detected if not provided.
+- `options` - Format-specific reader options (e.g., `{"header": "true"}`)
+- `schema` - Optional Spark schema for reading
+- `exclude_metadata` - List of metadata columns to exclude
+- `custom_metadata` - Dictionary of custom metadata to add
+- `validate` - Enable schema validation against target (default: True)
+- `strict_mode` - Fail on extra columns or type mismatches (default: True)
+- `check_duplicates` - **NOT IMPLEMENTED** - Reserved for future idempotency feature (must keep default value True)
+- `force_reprocess` - **NOT IMPLEMENTED** - Reserved for future feature (must keep default value False)
+
+**Returns:** DataFrame with bronze metadata ready for loading
+
+**Raises:** `SchemaValidationError` if validation fails in strict mode
+
+**Supported Formats:**
+- CSV (auto-detects from `.csv` extension)
+- JSON (auto-detects from `.json` extension)
+- Parquet (auto-detects from `.parquet` extension)
+
+---
 
 ### `add_bronze_metadata()`
 
-Add standard metadata to any DataFrame.
+Manually add bronze metadata to any DataFrame.
 
 ```python
-from alur.ingestion import add_bronze_metadata
-
-bronze_df = add_bronze_metadata(
-    df,
-    source_system="sales_db",
-    source_file="orders.csv",
-    custom_metadata={
-        "_batch_id": "batch_001",
-        "_environment": "prod"
-    }
-)
+def add_bronze_metadata(
+    df: DataFrame,
+    source_system: Optional[str] = None,
+    source_file: Optional[str] = None,
+    exclude: Optional[List[str]] = None,
+    custom_metadata: Optional[Dict[str, Any]] = None
+) -> DataFrame:
 ```
 
 **Parameters:**
-- `df`: Input DataFrame
-- `source_system`: Name of source system
-- `source_file`: Source file identifier
-- `custom_metadata`: Dict of additional metadata fields
 
-**Returns:** DataFrame with metadata columns
+- `df` - Input DataFrame
+- `source_system` - Name of source system
+- `source_file` - Source file identifier
+- `exclude` - List of metadata columns to exclude (e.g., `["_source_file"]` for API data)
+- `custom_metadata` - Dictionary of additional metadata fields
+
+**Returns:** DataFrame with metadata columns added
 
 ---
 
-### `load_csv_to_bronze()`
+### `validate_schema()`
 
-Load CSV files with automatic metadata.
+Validate DataFrame schema against a table contract.
 
 ```python
-from alur.ingestion import load_csv_to_bronze
-
-df = load_csv_to_bronze(
-    spark,
-    source_path="s3://landing/*.csv",
-    source_system="sales_db",
-    options={
-        "header": "true",
-        "inferSchema": "true",
-        "mode": "PERMISSIVE"
-    },
-    add_metadata=True
-)
+def validate_schema(
+    df: DataFrame,
+    target: Type,
+    strict_mode: bool = True,
+    exclude_metadata: bool = False
+) -> None:
 ```
 
 **Parameters:**
-- `spark`: SparkSession
-- `source_path`: S3/local path (supports wildcards)
-- `source_system`: Source system name
-- `options`: CSV reader options
-- `schema`: Optional explicit schema
-- `add_metadata`: Add Bronze metadata (default True)
 
----
+- `df` - DataFrame to validate
+- `target` - Table contract class (e.g., `OrdersBronze`)
+- `strict_mode` - If True, fail on extra columns or type mismatches. If False, warn only.
+- `exclude_metadata` - If True, ignore bronze metadata columns in validation
 
-### `load_json_to_bronze()`
-
-Load JSON files with automatic metadata.
-
-```python
-from alur.ingestion import load_json_to_bronze
-
-df = load_json_to_bronze(
-    spark,
-    source_path="s3://landing/*.json",
-    source_system="event_api",
-    multiline=True
-)
-```
-
-**Parameters:**
-- `spark`: SparkSession
-- `source_path`: S3/local path
-- `source_system`: Source system name
-- `multiline`: True for single JSON object per file
-- `options`: JSON reader options
-- `add_metadata`: Add Bronze metadata
-
----
-
-### `load_parquet_to_bronze()`
-
-Load Parquet files with automatic metadata.
-
-```python
-from alur.ingestion import load_parquet_to_bronze
-
-df = load_parquet_to_bronze(
-    spark,
-    source_path="s3://landing/*.parquet",
-    source_system="data_export"
-)
-```
-
----
-
-### `handle_bad_records()`
-
-Handle corrupted/malformed records.
-
-```python
-from alur.ingestion import handle_bad_records
-
-# Read in PERMISSIVE mode (bad records → _corrupt_record column)
-raw_df = spark.read.csv("data.csv", mode="PERMISSIVE")
-
-# Save bad records and filter them out
-clean_df = handle_bad_records(
-    raw_df,
-    bad_records_path="s3://errors/bad_records/",
-    filter_corrupted=True
-)
-```
-
-**Best Practice:**
-- Always use `mode="PERMISSIVE"` when reading
-- Save bad records for investigation
-- Don't silently discard bad data
-
----
-
-### `IncrementalLoader`
-
-Load only new files since last run.
-
-```python
-from alur.ingestion import IncrementalLoader
-
-loader = IncrementalLoader(
-    spark,
-    watermark_table="bronze_watermarks",
-    watermark_path="s3://alur-datalake/watermarks/"
-)
-
-# Define how to load a single file
-def load_file(path):
-    return load_csv_to_bronze(spark, path, "sales_db")
-
-# Load only new files
-df = loader.load_new_files(
-    source_path="s3://landing/orders/*.csv",
-    source_name="orders_daily",
-    loader_fn=load_file,
-    watermark_pattern="filename"
-)
-
-if df is None:
-    print("No new files to process")
-```
-
-**Watermarking:**
-- Tracks last processed file/timestamp
-- Prevents reprocessing same data
-- Useful for daily/hourly file drops
+**Raises:** `SchemaValidationError` if validation fails in strict mode
 
 ---
 
 ## Common Patterns
 
-### Pattern 1: Daily File Drops
-
-Load daily CSV files from SFTP/S3.
+### Pattern 1: CSV File Ingestion (RECOMMENDED)
 
 ```python
 @pipeline(sources={}, target=OrdersBronze)
-def ingest_daily_orders():
-    """Load today's orders file."""
+def ingest_orders():
     spark = get_spark_session()
 
-    from datetime import date
-    today = date.today().strftime("%Y%m%d")
-
-    df = load_csv_to_bronze(
+    df = load_to_bronze(
         spark,
-        source_path=f"s3://landing/orders_{today}.csv",
-        source_system="sales_db"
+        source_path="s3://landing/orders/*.csv",
+        source_system="sales_db",
+        target=OrdersBronze,
+        validate=True,
+        strict_mode=True
     )
 
     return df
 ```
 
-### Pattern 2: Multiple Source Systems
+**Use when:** Ingesting CSV files from S3 with schema validation
 
-Combine data from different sources.
-
-```python
-@pipeline(sources={}, target=OrdersBronze)
-def ingest_all_orders():
-    """Load orders from all sources."""
-    spark = get_spark_session()
-
-    # Sales database
-    sales_df = load_csv_to_bronze(
-        spark, "s3://landing/sales/*.csv", "sales_db"
-    )
-
-    # POS system
-    pos_df = load_csv_to_bronze(
-        spark, "s3://landing/pos/*.csv", "pos_system"
-    )
-
-    # Combine (Bronze accepts all raw data)
-    return sales_df.union(pos_df)
-```
-
-### Pattern 3: API Data Ingestion
-
-Load JSON from REST API responses.
+### Pattern 2: API Data Ingestion
 
 ```python
 @pipeline(sources={}, target=EventsBronze)
 def ingest_api_events():
-    """Load events from API dumps."""
     spark = get_spark_session()
 
-    df = load_json_to_bronze(
-        spark,
-        source_path="s3://landing/api_events/*.json",
-        source_system="event_api",
-        multiline=True  # Each file is one JSON object
-    )
+    # Read from API response files
+    api_df = spark.read.json("s3://api-responses/events/*.json")
 
-    return df
-```
-
-### Pattern 4: Error Handling
-
-Handle bad records gracefully.
-
-```python
-@pipeline(sources={}, target=OrdersBronze)
-def ingest_orders_safe():
-    """Load orders with error handling."""
-    spark = get_spark_session()
-
-    # Read with PERMISSIVE mode
-    raw_df = spark.read.csv(
-        "s3://landing/orders.csv",
-        header=True,
-        mode="PERMISSIVE"
-    )
-
-    # Save and filter bad records
-    clean_df = handle_bad_records(
-        raw_df,
-        bad_records_path="s3://errors/orders/",
-        filter_corrupted=True
-    )
-
-    # Add metadata
+    # Exclude _source_file since this isn't from a file
     bronze_df = add_bronze_metadata(
-        clean_df,
-        source_system="sales_db",
-        source_file="orders.csv"
+        api_df,
+        source_system="events_api",
+        exclude=["_source_file"],
+        custom_metadata={
+            "_api_version": "v2",
+            "_request_id": "req_12345"
+        }
     )
 
     return bronze_df
 ```
 
-### Pattern 5: Incremental Loading
+**Use when:** Ingesting data from APIs, message queues, or non-file sources
 
-Only process new files.
+### Pattern 3: Manual Control (Advanced)
 
 ```python
 @pipeline(sources={}, target=OrdersBronze)
-def ingest_orders_incremental():
-    """Load only new order files."""
+def ingest_orders_manual():
     spark = get_spark_session()
 
-    loader = IncrementalLoader(spark)
-
-    df = loader.load_new_files(
-        source_path="s3://landing/orders/*.csv",
-        source_name="orders",
-        loader_fn=lambda p: load_csv_to_bronze(spark, p, "sales_db")
+    # Custom read logic with specific options
+    raw_df = spark.read.csv(
+        "s3://landing/orders/*.csv",
+        header=True,
+        inferSchema=False,
+        schema=custom_schema,
+        mode="FAILFAST"
     )
 
-    if df is None:
-        # No new files - return empty DataFrame
-        return spark.createDataFrame([], OrdersBronze.to_iceberg_schema())
+    # Manual metadata addition
+    bronze_df = add_bronze_metadata(
+        raw_df,
+        source_system="sales_db",
+        source_file="orders_daily.csv",
+        custom_metadata={"_batch_id": "batch_001"}
+    )
 
-    return df
+    return bronze_df
 ```
+
+**Use when:** Need fine-grained control over Spark reader options
+
+---
+
+## Cost Optimization for SMEs
+
+### Understanding Bronze Ingestion Costs
+
+Bronze ingestion costs come from:
+
+1. **AWS Glue DPU-hours** - Compute for running Spark jobs
+2. **S3 storage** - Storing Parquet files
+3. **S3 requests** - Reading source files, writing results
+
+### Cost-Saving Features
+
+**1. Parquet format reduces storage costs:**
+
+```
+CSV: 1GB of data = $0.023/month
+Parquet: Same data compressed to 200MB = $0.005/month (78% savings)
+```
+
+### Example: Monthly Cost for 1M Rows/Day
+
+| Component | Without Parquet | With Parquet | Savings |
+|-----------|-----------------|--------------|---------|
+| Storage (CSV) | $7 | $1.50 (compression) | $5.50 |
+| **Monthly Total** | **$7** | **$1.50** | **$5.50 (79% savings)** |
+
+**Note:** Additional cost savings can be achieved by implementing your own idempotency logic to prevent duplicate processing.
+
+---
+
+## Troubleshooting
+
+### Schema Validation Failed
+
+**Error:**
+```
+SchemaValidationError: Missing required column 'customer_id'
+```
+
+**Solution:**
+1. Check if source file format changed
+2. Verify column names match exactly (case-sensitive)
+3. For development, use `strict_mode=False` to see warnings instead of errors
+
+### No Data Loaded
+
+**Issue:** DataFrame is empty after `load_to_bronze()`
+
+**Solutions:**
+1. Verify S3 path is correct
+2. Check if wildcard pattern matches files
+3. Ensure AWS credentials have S3 read permissions
+4. Check CloudWatch logs for errors
 
 ---
 
 ## Best Practices
 
-### 1. ✅ Keep It Raw
+### 1. Enable Schema Validation in Production
 
 ```python
-# GOOD: Raw data with metadata
-@pipeline(sources={}, target=OrdersBronze)
-def ingest_orders(orders):
-    spark = get_spark_session()
-    df = load_csv_to_bronze(spark, "s3://landing/orders.csv", "sales_db")
-    return df  # Just metadata, no transformations
+# Production (strict)
+df = load_to_bronze(..., target=OrdersBronze, strict_mode=True)
 
-# BAD: Transformations in Bronze
-@pipeline(sources={}, target=OrdersBronze)
-def ingest_orders_bad(orders):
-    spark = get_spark_session()
-    df = load_csv_to_bronze(spark, "s3://landing/orders.csv", "sales_db")
-    return df.filter(F.col("amount") > 0)  # ❌ Filtering belongs in Silver!
+# Development (relaxed)
+df = load_to_bronze(..., target=OrdersBronze, strict_mode=False)
 ```
 
-### 2. ✅ Always Add Metadata
+### 2. Use Descriptive Source System Names
 
 ```python
-# GOOD: Standard metadata
-bronze_df = add_bronze_metadata(
-    raw_df,
-    source_system="sales_db",
-    source_file="orders.csv"
-)
+# Good
+source_system="salesforce_crm"
+source_system="stripe_payments"
+source_system="internal_hr_db"
 
-# BETTER: Custom metadata for tracking
-bronze_df = add_bronze_metadata(
-    raw_df,
-    source_system="sales_db",
-    source_file="orders.csv",
-    custom_metadata={
-        "_batch_id": batch_id,
-        "_environment": env,
-        "_data_owner": "sales_team"
-    }
-)
-```
-
-### 3. ✅ Handle Bad Records
-
-```python
-# GOOD: Save bad records for investigation
-raw_df = spark.read.csv("data.csv", mode="PERMISSIVE")
-clean_df = handle_bad_records(
-    raw_df,
-    bad_records_path="s3://errors/bronze/",
-    filter_corrupted=True
-)
-
-# BAD: Silent failures
-raw_df = spark.read.csv("data.csv", mode="DROPMALFORMED")  # ❌ Lost data!
-```
-
-### 4. ✅ Use Partitioning
-
-```python
-class OrdersBronze(BronzeTable):
-    order_id = StringField(nullable=False)
-    created_at = TimestampField(nullable=True)
-
-    class Meta:
-        partition_by = ["created_at"]  # ✅ Efficient queries
-```
-
-### 5. ✅ Incremental Processing
-
-```python
-# GOOD: Only process new files
-loader = IncrementalLoader(spark)
-df = loader.load_new_files(...)
-
-# BAD: Reprocess everything every time
-df = spark.read.csv("s3://landing/all_files/*.csv")  # ❌ Inefficient
+# Bad
+source_system="db1"
+source_system="api"
+source_system="data"
 ```
 
 ---
 
-## Bronze → Silver Pipeline
+## Current Limitations
 
-After loading to Bronze, create a Silver pipeline for cleaning:
+The following features are **not yet implemented** in the Spark-based `load_to_bronze()` function:
 
+### 1. Idempotency / Duplicate Detection
+
+**Status:** Not implemented
+
+**Impact:** Files will be reprocessed every time the pipeline runs, potentially causing:
+- Duplicate records in bronze tables
+- Increased storage costs
+- Wasted compute resources
+
+**Workarounds:**
+- Use the batch ingestion module (`alur.batch_ingestion.ingest_csv_sources_to_bronze()`) which has better support for batch processing
+- Implement your own deduplication logic (e.g., check DynamoDB before processing)
+- Use unique file paths and manual file management
+- Add deduplication in Silver layer transformations
+
+**Example of manual deduplication:**
 ```python
-from alur.decorators import pipeline
-from alur.quality import expect, not_empty, no_nulls_in_column
+import boto3
+from datetime import datetime
 
-@expect(name="has_data", check_fn=not_empty)
-@expect(name="no_null_ids", check_fn=no_nulls_in_column("order_id"))
-@pipeline(sources={"orders": OrdersBronze}, target=OrdersSilver)
-def clean_orders(orders):
-    """
-    Silver layer: Clean and validate Bronze data.
+dynamodb = boto3.resource('dynamodb')
+table = dynamodb.Table('alur-ingestion-state')
 
-    Now we can:
-    - Filter out bad records
-    - Apply business rules
-    - Deduplicate
-    - Standardize formats
-    """
-    from pyspark.sql import functions as F
+def should_process_file(file_path: str) -> bool:
+    """Check if file was already processed."""
+    try:
+        response = table.get_item(Key={'file_path': file_path})
+        return 'Item' not in response
+    except:
+        return True
 
-    # Filter valid records
-    cleaned = orders.filter(
-        (F.col("order_id").isNotNull()) &
-        (F.col("amount") > 0) &
-        (F.col("created_at").isNotNull())
-    )
-
-    # Drop Bronze metadata (not needed in Silver)
-    cleaned = cleaned.drop("_ingested_at", "_source_system", "_source_file")
-
-    # Apply business logic
-    cleaned = cleaned.withColumn(
-        "amount_usd",
-        F.col("amount") / 100.0  # Convert cents to dollars
-    )
-
-    # Deduplicate by order_id (keep latest)
-    from pyspark.sql.window import Window
-    window = Window.partitionBy("order_id").orderBy(F.desc("created_at"))
-
-    deduplicated = cleaned.withColumn(
-        "rn", F.row_number().over(window)
-    ).filter(F.col("rn") == 1).drop("rn")
-
-    return deduplicated
+def mark_processed(file_path: str):
+    """Mark file as processed."""
+    table.put_item(Item={
+        'file_path': file_path,
+        'processed_at': datetime.utcnow().isoformat()
+    })
 ```
+
+### 2. Scheduled Execution
+
+**Status:** Removed (was broken)
+
+**Impact:** No automatic pipeline triggering via EventBridge
+
+**Workarounds:**
+- Use AWS EventBridge directly to trigger Glue jobs
+- Use external schedulers (Airflow, Step Functions, cron)
+- Manual triggering via `alur run <pipeline>`
+- Use AWS Glue workflow triggers
+
+### 3. Sample-Based Validation Only
+
+**Status:** By design (in batch ingestion)
+
+**Limitation:** CSV validation only checks first 50 rows by default
+
+**Impact:** Schema errors in rows beyond the sample may go undetected
+
+**Workarounds:**
+- Increase `sample_rows` parameter (e.g., `sample_rows=1000`)
+- Set `sample_rows=None` for full file validation (slower, more expensive)
+- Rely on Spark schema enforcement to catch issues during read
+- Add data quality checks in Silver layer
+
+### 4. CSV-Only Support (for Spark-based ingestion)
+
+**Status:** By design (AWS-only, batch-focused framework)
+
+**Limitation:** Only CSV files from S3 are supported
+
+**Workarounds:**
+- Use Spark directly for other formats
+- Convert files to CSV before ingestion
+- Use batch ingestion for CSV, custom code for other formats
 
 ---
 
-## Architecture Overview
+## Next Steps
 
-```
-┌─────────────────────────────────────────────┐
-│         Source Systems                      │
-│  (Sales DB, APIs, SFTP, Files)             │
-└──────────────┬──────────────────────────────┘
-               │
-               ▼
-┌─────────────────────────────────────────────┐
-│         Landing Zone (S3)                   │
-│  Raw files: CSV, JSON, Parquet              │
-└──────────────┬──────────────────────────────┘
-               │
-               ▼
-┌─────────────────────────────────────────────┐
-│  Ingestion Helpers (This Module)            │
-│  - load_csv_to_bronze()                     │
-│  - add_bronze_metadata()                    │
-│  - handle_bad_records()                     │
-└──────────────┬──────────────────────────────┘
-               │
-               ▼
-┌─────────────────────────────────────────────┐
-│         BRONZE LAYER                        │
-│  Raw data + metadata (Parquet)              │
-│  - _ingested_at                             │
-│  - _source_system                           │
-│  - _source_file                             │
-│  Append-only, immutable                     │
-└──────────────┬──────────────────────────────┘
-               │
-               ▼
-┌─────────────────────────────────────────────┐
-│         SILVER LAYER                        │
-│  Cleaned, validated, deduplicated           │
-│  Business rules applied                     │
-└──────────────┬──────────────────────────────┘
-               │
-               ▼
-┌─────────────────────────────────────────────┐
-│         GOLD LAYER                          │
-│  Business-ready aggregates                  │
-└─────────────────────────────────────────────┘
-```
+After loading data into Bronze:
 
----
+1. **Create Silver pipelines** - Transform and clean data
+2. **Add data quality checks** - Use `@expect` decorator
+3. **Set up monitoring** - Check CloudWatch logs
+4. **Review costs** - Monitor AWS Glue DPU usage
 
-## Summary
-
-Bronze layer ingestion helpers provide:
-
-✅ **Standard metadata** - Track data lineage automatically
-✅ **Easy file loading** - CSV, JSON, Parquet support
-✅ **Error handling** - Save bad records for investigation
-✅ **Incremental loading** - Process only new files
-✅ **Best practices** - Built-in Bronze layer patterns
-
-**Remember:** Bronze is raw data + metadata. All transformations happen in Silver and Gold layers!
-
-See [`examples/bronze_ingestion_examples.py`](examples/bronze_ingestion_examples.py) for complete working examples.
+See [Data Quality](DATA_QUALITY.md) for validation patterns.
