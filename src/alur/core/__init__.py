@@ -1,6 +1,6 @@
 """Core module for Alur framework."""
 
-from .contracts import BaseTable, BronzeTable, SilverTable, GoldTable, TableMeta
+from .contracts import BaseTable, BronzeTable, TableMeta
 from .fields import (
     Field,
     StringField,
@@ -18,8 +18,6 @@ from .fields import (
 __all__ = [
     "BaseTable",
     "BronzeTable",
-    "SilverTable",
-    "GoldTable",
     "TableMeta",
     "Field",
     "StringField",

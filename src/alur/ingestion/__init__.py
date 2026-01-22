@@ -146,6 +146,91 @@ def _detect_format(source_path: str) -> str:
         return 'parquet' # Safe default
 
 
+def _validate_csv_headers_from_s3(s3_path: str, target: Type) -> Dict[str, Any]:
+    """
+    Validate CSV headers against contract schema before reading data.
+
+    Returns dict with:
+        - is_valid: bool
+        - missing_columns: list
+        - extra_columns: list
+        - error_message: str (if invalid)
+    """
+    import csv
+    import io
+
+    # Parse S3 path
+    parsed = urlparse(s3_path)
+    bucket = parsed.netloc
+    key = parsed.path.lstrip('/')
+
+    # Get expected columns from contract (exclude metadata columns)
+    expected_fields = target._fields
+    expected_columns = {col for col in expected_fields.keys() if not col.startswith('_')}
+
+    # Read first line from S3 to get headers
+    s3 = boto3.client('s3')
+    try:
+        # Read only first 1KB (headers should be in first line)
+        response = s3.get_object(Bucket=bucket, Key=key, Range='bytes=0-1024')
+        first_chunk = response['Body'].read().decode('utf-8')
+
+        # Parse CSV header
+        csv_reader = csv.reader(io.StringIO(first_chunk))
+        headers = next(csv_reader)
+        actual_columns = set(h.strip() for h in headers)
+
+        # Check for missing and extra columns
+        missing_columns = expected_columns - actual_columns
+        extra_columns = actual_columns - expected_columns
+
+        # Identify required vs optional missing columns
+        required_missing = []
+        optional_missing = []
+        for col in missing_columns:
+            field = expected_fields[col]
+            if not field.nullable:
+                required_missing.append(col)
+            else:
+                optional_missing.append(col)
+
+        # Determine if valid
+        is_valid = len(required_missing) == 0
+
+        # Build error message if invalid
+        error_message = None
+        if not is_valid:
+            parts = []
+            if required_missing:
+                parts.append(f"Missing required columns: {', '.join(sorted(required_missing))}")
+            if extra_columns:
+                parts.append(f"Unexpected columns: {', '.join(sorted(extra_columns))}")
+            error_message = "; ".join(parts)
+
+        return {
+            'is_valid': is_valid,
+            'missing_columns': list(missing_columns),
+            'extra_columns': list(extra_columns),
+            'required_missing': required_missing,
+            'optional_missing': optional_missing,
+            'error_message': error_message,
+            'actual_headers': list(actual_columns),
+            'expected_headers': list(expected_columns)
+        }
+
+    except Exception as e:
+        logger.warning(f"Could not validate CSV headers for {s3_path}: {e}")
+        # Return as valid to allow fallback to Spark validation
+        return {
+            'is_valid': True,
+            'missing_columns': [],
+            'extra_columns': [],
+            'error_message': None,
+            'validation_skipped': True,
+            'skip_reason': str(e)
+        }
+
+
 def _get_spark_type_name(data_type: DataType) -> str:
     """Get a human-readable name for a Spark data type."""
     type_name = str(data_type)
@@ -182,6 +267,7 @@ def validate_schema(
     metadata_columns = {'_ingested_at', '_source_system', '_source_file'}
     if exclude_metadata:
         expected_columns = {col for col in expected_columns if col not in metadata_columns}
+        df_columns = {col for col in df_columns if col not in metadata_columns}
 
     errors = []
     warnings = []
@@ -284,7 +370,57 @@ def load_to_bronze(
             return spark.createDataFrame([], schema=target.to_iceberg_schema())
         return spark.createDataFrame([], schema=StructType([]))
 
-    # 2. Determine Schema (Contract-Driven or Inferred)
+    # 2. Validate CSV Headers (Before Reading Data)
+    validated_files = []
+    skipped_files = []
+
+    if target and validate and found_files:
+        # Only validate if we have explicit file list (not wildcard fallback)
+        logger.info(f"Validating CSV headers for {len(files_to_process)} files against {target.__name__} contract...")
+
+        for file_info in files_to_process:
+            file_path = file_info['path']
+            validation_result = _validate_csv_headers_from_s3(file_path, target)
+
+            if validation_result.get('validation_skipped'):
+                # Header validation couldn't be performed, let Spark handle it
+                validated_files.append(file_info)
+                logger.warning(f"Header validation skipped for {file_path}: {validation_result.get('skip_reason')}")
+
+            elif validation_result['is_valid']:
+                # Headers match schema
+                validated_files.append(file_info)
+                logger.info(f"Schema validation passed: {file_path}")
+
+            else:
+                # Headers don't match schema
+                error_msg = f"Schema validation failed for {file_path}: {validation_result['error_message']}"
+
+                if strict_mode:
+                    # Fail immediately in strict mode
+                    raise SchemaValidationError(error_msg)
+                else:
+                    # Log and skip file in non-strict mode
+                    logger.warning(f"SKIPPING FILE - {error_msg}")
+                    skipped_files.append({'file': file_path, 'reason': validation_result['error_message']})
+
+        # Update files to process with only validated files
+        files_to_process = validated_files
+
+        if skipped_files:
+            logger.warning(f"Skipped {len(skipped_files)} files due to schema validation failures:")
+            for skip_info in skipped_files:
+                logger.warning(f"  - {skip_info['file']}: {skip_info['reason']}")
+
+        if not files_to_process:
+            logger.warning("No files passed schema validation. Returning empty DataFrame.")
+            if target:
+                return spark.createDataFrame([], schema=target.to_iceberg_schema())
+            return spark.createDataFrame([], schema=StructType([]))
+
+        logger.info(f"Proceeding to read {len(files_to_process)} validated files")
+
+    # 3. Determine Schema (Contract-Driven or Inferred)
     read_schema = schema
     if target and not read_schema:
         # Use the contract schema for reading! (Schema-on-Read)
@@ -295,7 +431,7 @@ def load_to_bronze(
         read_schema = StructType(clean_fields)
         logger.info(f"Enforcing schema from contract {target.__name__}")
 
-    # 3. Read Data
+    # 4. Read Data
     if format and format.lower() != "csv":
         raise ValueError("Only CSV is supported in batch-only mode")
     file_format = "csv"
@@ -323,7 +459,7 @@ def load_to_bronze(
 
     df = reader.csv(path_arg)
 
-    # 4. Add Metadata
+    # 5. Add Metadata
     # Use input_file_name() to handle multiple files correctly
     df = add_bronze_metadata(
         df,
@@ -333,9 +469,9 @@ def load_to_bronze(
         custom_metadata=custom_metadata
     )
 
-    # 5. Validation (Optional post-read check)
+    # 6. Validation (Optional post-read check for type mismatches)
     if target and validate:
-        # Note: If we enforced schema on read, this mostly checks for missing columns
+        # Note: Header validation already done in step 2. This checks for type compatibility.
         validate_schema(df, target=target, strict_mode=strict_mode, exclude_metadata=True)
 
     duration = time.time() - start_time

@@ -25,8 +25,6 @@ data lake architectures for resource-constrained organizations.
 from .core import (
     BaseTable,
     BronzeTable,
-    SilverTable,
-    GoldTable,
     StringField,
     IntegerField,
     LongField,
@@ -47,8 +45,6 @@ from .engine import (
     get_spark_session,
 )
 
-from .scheduling import schedule, ScheduleRegistry
-
 from .quality import (
     expect,
     QualityRegistry,
@@ -66,18 +62,25 @@ from .quality import (
 from .ingestion import (
     add_bronze_metadata,
     load_to_bronze,
-    handle_bad_records,
-    IncrementalLoader
+    validate_schema,
+    SchemaValidationError,
 )
 
-__version__ = "0.3.0"
+from .batch_ingestion import (
+    S3CsvSource,
+    BatchIngestionReport,
+    BatchSchemaError,
+    CsvValidationResult,
+    ingest_csv_sources_to_bronze,
+    validate_csv_bytes,
+)
+
+__version__ = "0.5.0"
 
 __all__ = [
     # Table classes
     "BaseTable",
     "BronzeTable",
-    "SilverTable",
-    "GoldTable",
     # Field types
     "StringField",
     "IntegerField",
@@ -92,9 +95,6 @@ __all__ = [
     # Decorators
     "pipeline",
     "PipelineRegistry",
-    # Scheduling
-    "schedule",
-    "ScheduleRegistry",
     # Quality
     "expect",
     "QualityRegistry",
@@ -110,8 +110,15 @@ __all__ = [
     # Ingestion
     "add_bronze_metadata",
     "load_to_bronze",
-    "handle_bad_records",
-    "IncrementalLoader",
+    "validate_schema",
+    "SchemaValidationError",
+    # Batch ingestion (CSV/S3)
+    "S3CsvSource",
+    "BatchIngestionReport",
+    "BatchSchemaError",
+    "CsvValidationResult",
+    "ingest_csv_sources_to_bronze",
+    "validate_csv_bytes",
     # Engine
     "AWSAdapter",
     "PipelineRunner",

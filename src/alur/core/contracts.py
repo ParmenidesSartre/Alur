@@ -1,6 +1,6 @@
 """
 Table contract definitions using metaclass pattern.
-Defines BaseTable, BronzeTable, and SilverTable classes.
+Defines BaseTable and BronzeTable classes.
 """
 
 from typing import Dict, List, Optional, Type, Any
@@ -21,6 +21,22 @@ class TableMeta:
 
 class BaseTableMeta(type):
     """Metaclass for BaseTable that processes field definitions."""
+
+    @staticmethod
+    def _derive_clean_table_name(class_name: str) -> str:
+        """
+        Derive clean table name from class name.
+
+        Examples:
+            OrdersBronze -> orders
+            Orders -> orders
+        """
+        # Remove common suffixes
+        for suffix in ["Bronze", "Table"]:
+            if class_name.endswith(suffix):
+                class_name = class_name[:-len(suffix)]
+
+        return class_name.lower()
 
     def __new__(mcs, name, bases, namespace, **kwargs):
         # Skip processing for BaseTable itself
@@ -48,7 +64,8 @@ class BaseTableMeta(type):
             table_meta.bucket = getattr(meta, "bucket", None)
 
         namespace["_meta"] = table_meta
-        namespace["_table_name"] = name.lower()
+        # Use clean table name derivation
+        namespace["_table_name"] = mcs._derive_clean_table_name(name)
 
         return super().__new__(mcs, name, bases, namespace)
 
@@ -80,8 +97,37 @@ class BaseTable(metaclass=BaseTableMeta):
 
     @classmethod
     def get_table_name(cls) -> str:
-        """Get the table name."""
+        """Get the clean table name (e.g., 'orders', not 'ordersbronze')."""
         return cls._table_name
+
+    @classmethod
+    def get_layer(cls) -> str:
+        """
+        Get the data lake layer for this table.
+
+        Returns:
+            str: 'bronze' or 'unknown'
+        """
+        from . import BronzeTable
+
+        if issubclass(cls, BronzeTable) and cls is not BronzeTable:
+            return "bronze"
+        else:
+            return "unknown"
+
+    @classmethod
+    def get_database_name(cls, env: str = "dev") -> str:
+        """
+        Get the Glue database name for this table.
+
+        Args:
+            env: Environment name (dev, staging, prod)
+
+        Returns:
+            str: Database name like 'alur_bronze_dev'
+        """
+        layer = cls.get_layer()
+        return f"alur_{layer}_{env}"
 
     @classmethod
     def get_fields(cls) -> Dict[str, Field]:
@@ -116,10 +162,6 @@ class BaseTable(metaclass=BaseTableMeta):
         if layer is None:
             if isinstance(cls, type) and issubclass(cls, BronzeTable):
                 layer = "bronze"
-            elif isinstance(cls, type) and issubclass(cls, SilverTable):
-                layer = "silver"
-            elif isinstance(cls, type) and issubclass(cls, GoldTable):
-                layer = "gold"
             else:
                 layer = "unknown"
 
@@ -141,10 +183,6 @@ class BaseTable(metaclass=BaseTableMeta):
         if layer is None:
             if isinstance(cls, type) and issubclass(cls, BronzeTable):
                 layer = "bronze"
-            elif isinstance(cls, type) and issubclass(cls, SilverTable):
-                layer = "silver"
-            elif isinstance(cls, type) and issubclass(cls, GoldTable):
-                layer = "gold"
             else:
                 layer = "unknown"
 
@@ -172,61 +210,8 @@ class BronzeTable(BaseTable):
         return cls._write_mode
 
 
-class SilverTable(BaseTable):
-    """
-    Silver layer table (cleaned, deduplicated data).
-    - Format: Parquet
-    - Write mode: Merge (Upsert)
-    - Requires: primary_key in Meta
-    """
-
-    _format = "parquet"
-    _write_mode = "merge"
-
-    def __init_subclass__(cls, **kwargs):
-        super().__init_subclass__(**kwargs)
-        # Validate that primary_key is defined
-        if hasattr(cls, "_meta") and cls._meta.primary_key is None:
-            raise ValueError(
-                f"SilverTable '{cls.__name__}' must define 'primary_key' in its Meta class"
-            )
-
-    @classmethod
-    def get_format(cls) -> str:
-        """Get the storage format for Silver tables."""
-        return cls._format
-
-    @classmethod
-    def get_write_mode(cls) -> str:
-        """Get the write mode for Silver tables."""
-        return cls._write_mode
-
-
-class GoldTable(BaseTable):
-    """
-    Gold layer table (business-level aggregates).
-    - Format: Parquet (can be configured to Iceberg when available)
-    - Write mode: Overwrite or Merge (configurable)
-    """
-
-    _format = "parquet"
-    _write_mode = "overwrite"
-
-    @classmethod
-    def get_format(cls) -> str:
-        """Get the storage format for Gold tables."""
-        return cls._format
-
-    @classmethod
-    def get_write_mode(cls) -> str:
-        """Get the write mode for Gold tables."""
-        return cls._write_mode
-
-
 __all__ = [
     "BaseTable",
     "BronzeTable",
-    "SilverTable",
-    "GoldTable",
     "TableMeta",
 ]

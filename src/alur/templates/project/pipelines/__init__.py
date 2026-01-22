@@ -1,7 +1,7 @@
 """Pipelines module."""
 
-from .orders import clean_orders
+from .ingest_orders import ingest_orders
 
 __all__ = [
-    "clean_orders",
+    "ingest_orders",
 ]

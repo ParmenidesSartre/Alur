@@ -37,7 +37,7 @@ class InfrastructureGenerator:
 
     def scan_contracts(self) -> Dict[str, Any]:
         """Scan contracts directory and extract table definitions."""
-        from alur.core.contracts import BaseTable
+        from alur.core.contracts import BaseTable, BronzeTable
 
         contracts = {}
 
@@ -54,12 +54,13 @@ class InfrastructureGenerator:
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
 
-            # Find all BaseTable subclasses
+            # Find all BaseTable subclasses (exclude base layer classes)
             for attr_name in dir(module):
                 attr = getattr(module, attr_name)
                 if (isinstance(attr, type) and
                     issubclass(attr, BaseTable) and
-                    attr is not BaseTable):
+                    attr is not BaseTable and
+                    attr is not BronzeTable):  # Don't create tables for base layer classes
 
                     table_info = {
                         "name": attr.__name__,
@@ -75,15 +76,11 @@ class InfrastructureGenerator:
         return contracts
 
     def _get_layer(self, table_class) -> str:
-        """Determine which layer (bronze/silver/gold) a table belongs to."""
-        from alur.core.contracts import BronzeTable, SilverTable, GoldTable
+        """Determine which layer (bronze) a table belongs to."""
+        from alur.core.contracts import BronzeTable
 
         if issubclass(table_class, BronzeTable):
             return "bronze"
-        elif issubclass(table_class, SilverTable):
-            return "silver"
-        elif issubclass(table_class, GoldTable):
-            return "gold"
         return "unknown"
 
     def _get_s3_location(self, table_class) -> str:
@@ -93,8 +90,6 @@ class InfrastructureGenerator:
 
         bucket_map = {
             "bronze": "BRONZE_BUCKET",
-            "silver": "SILVER_BUCKET",
-            "gold": "GOLD_BUCKET",
         }
 
         bucket_var = bucket_map.get(layer, "BRONZE_BUCKET")
@@ -124,9 +119,8 @@ provider "aws" {{
         region = getattr(self.config, "AWS_REGION", "ap-southeast-5")
 
         bronze = getattr(self.config, "BRONZE_BUCKET", f"alur-bronze-{env}")
-        silver = getattr(self.config, "SILVER_BUCKET", f"alur-silver-{env}")
-        gold = getattr(self.config, "GOLD_BUCKET", f"alur-gold-{env}")
         artifacts = getattr(self.config, "ARTIFACTS_BUCKET", f"alur-artifacts-{env}")
+        landing = getattr(self.config, "LANDING_BUCKET", f"alur-landing-{env}")
 
         return f'''# S3 Buckets for Alur Data Lake
 # Auto-generated - do not edit manually
@@ -140,28 +134,19 @@ resource "aws_s3_bucket" "bronze" {{
   }}
 }}
 
-resource "aws_s3_bucket" "silver" {{
-  bucket = "{silver}"
-  tags = {{
-    Environment = "{env}"
-    Layer       = "silver"
-    ManagedBy   = "alur"
-  }}
-}}
-
-resource "aws_s3_bucket" "gold" {{
-  bucket = "{gold}"
-  tags = {{
-    Environment = "{env}"
-    Layer       = "gold"
-    ManagedBy   = "alur"
-  }}
-}}
-
 resource "aws_s3_bucket" "artifacts" {{
   bucket = "{artifacts}"
   tags = {{
     Environment = "{env}"
+    ManagedBy   = "alur"
+  }}
+}}
+
+resource "aws_s3_bucket" "landing" {{
+  bucket = "{landing}"
+  tags = {{
+    Environment = "{env}"
+    Layer       = "landing"
     ManagedBy   = "alur"
   }}
 }}
@@ -221,12 +206,10 @@ resource "aws_iam_role_policy" "glue_s3_policy" {{
         Resource = [
           "${{aws_s3_bucket.bronze.arn}}/*",
           "${{aws_s3_bucket.bronze.arn}}",
-          "${{aws_s3_bucket.silver.arn}}/*",
-          "${{aws_s3_bucket.silver.arn}}",
-          "${{aws_s3_bucket.gold.arn}}/*",
-          "${{aws_s3_bucket.gold.arn}}",
           "${{aws_s3_bucket.artifacts.arn}}/*",
-          "${{aws_s3_bucket.artifacts.arn}}"
+          "${{aws_s3_bucket.artifacts.arn}}",
+          "${{aws_s3_bucket.landing.arn}}/*",
+          "${{aws_s3_bucket.landing.arn}}"
         ]
       }},
       {{
@@ -253,27 +236,93 @@ resource "aws_iam_role_policy" "glue_s3_policy" {{
           "glue:BatchDeletePartition"
         ]
         Resource = "*"
+      }},
+      {{
+        Effect = "Allow"
+        Action = [
+          "dynamodb:PutItem",
+          "dynamodb:GetItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:Query",
+          "dynamodb:Scan",
+          "dynamodb:DescribeTable"
+        ]
+        Resource = "arn:aws:dynamodb:*:*:table/alur-ingestion-state"
+      }},
+      {{
+        Effect = "Allow"
+        Action = [
+          "lakeformation:GetDataAccess",
+          "lakeformation:GrantPermissions",
+          "lakeformation:RevokePermissions",
+          "lakeformation:BatchGrantPermissions",
+          "lakeformation:BatchRevokePermissions",
+          "lakeformation:ListPermissions",
+          "lakeformation:RegisterResource",
+          "lakeformation:DeregisterResource"
+        ]
+        Resource = "*"
       }}
     ]
   }})
 }}
 '''
 
-    def generate_glue_database_tf(self, contracts: Dict[str, Any]) -> str:
-        """Generate Glue database and tables terraform."""
+    def generate_dynamodb_tf(self) -> str:
+        """Generate DynamoDB table for ingestion state tracking."""
         env = getattr(self.config, "ENVIRONMENT", "dev")
-        db_name = getattr(self.config, "GLUE_DATABASE", f"alur_datalake_{env}")
 
-        tf_content = f'''# Glue Catalog Database and Tables
-# Auto-generated from contracts - do not edit manually
+        return f'''# DynamoDB Table for Ingestion State Tracking
+# Auto-generated - do not edit manually
+# Used for idempotency to prevent duplicate ingestion
 
-resource "aws_glue_catalog_database" "main" {{
-  name = "{db_name}"
+resource "aws_dynamodb_table" "ingestion_state" {{
+  name           = "alur-ingestion-state"
+  billing_mode   = "PAY_PER_REQUEST"  # On-demand pricing for SMEs
+  hash_key       = "ingestion_key"
+  range_key      = "file_path"
 
-  description = "Alur data lake database - auto-generated"
+  attribute {{
+    name = "ingestion_key"
+    type = "S"
+  }}
+
+  attribute {{
+    name = "file_path"
+    type = "S"
+  }}
 
   tags = {{
     Environment = "{env}"
+    ManagedBy   = "alur"
+    Purpose     = "ingestion-state-tracking"
+  }}
+}}
+'''
+
+    def generate_glue_database_tf(self, contracts: Dict[str, Any]) -> str:
+        """
+        Generate Glue databases and tables terraform.
+
+        Creates:
+        - bronze_layer database (contains all bronze tables)
+
+        Each source gets one table in the bronze_layer database.
+        """
+        env = getattr(self.config, "ENVIRONMENT", "dev")
+
+        tf_content = f'''# Glue Catalog Database - Bronze Layer
+# Auto-generated from contracts - do not edit manually
+
+# Bronze Database - Raw data layer with metadata
+resource "aws_glue_catalog_database" "bronze" {{
+  name = "bronze_layer"
+
+  description = "Bronze layer - raw data as-is with ingestion metadata"
+
+  tags = {{
+    Environment = "{env}"
+    Layer       = "bronze"
     ManagedBy   = "alur"
   }}
 }}
@@ -284,29 +333,19 @@ resource "aws_glue_catalog_database" "main" {{
         for contract_name, contract_info in contracts.items():
             table_name = contract_info["table_name"]
             layer = contract_info["layer"]
-            format_type = contract_info.get("format", "parquet")
+            format_type = "parquet"  # Use Parquet for all tables
 
-            # Map layer to bucket variable
-            bucket_var = {
-                "bronze": "aws_s3_bucket.bronze.bucket",
-                "silver": "aws_s3_bucket.silver.bucket",
-                "gold": "aws_s3_bucket.gold.bucket",
-            }.get(layer, "aws_s3_bucket.bronze.bucket")
+            # Map layer to database and bucket
+            layer_resources = {
+                "bronze": {
+                    "database": "aws_glue_catalog_database.bronze.name",
+                    "bucket": "aws_s3_bucket.bronze.bucket"
+                },
+            }
 
-            # Determine input/output format and SerDe based on format type
-            if format_type == "parquet":
-                input_format = "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat"
-                output_format = "org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat"
-                serde_lib = "org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe"
-            elif format_type == "json":
-                input_format = "org.apache.hadoop.mapred.TextInputFormat"
-                output_format = "org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat"
-                serde_lib = "org.openx.data.jsonserde.JsonSerDe"
-            else:
-                # Default to parquet
-                input_format = "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat"
-                output_format = "org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat"
-                serde_lib = "org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe"
+            resources = layer_resources.get(layer, layer_resources["bronze"])
+            database_ref = resources["database"]
+            bucket_var = resources["bucket"]
 
             # Generate column definitions as individual blocks
             # Exclude partition columns from regular columns
@@ -339,23 +378,31 @@ resource "aws_glue_catalog_database" "main" {{
 
             partition_str = "".join(partition_blocks)
 
+            # Use unique resource name combining table and layer
+            resource_name = f"{table_name}_{layer}"
+
+            # Hive/Parquet tables
             tf_content += f'''
-resource "aws_glue_catalog_table" "{table_name}" {{
+resource "aws_glue_catalog_table" "{resource_name}" {{
   name          = "{table_name}"
-  database_name = aws_glue_catalog_database.main.name
+  database_name = {database_ref}
 
   table_type = "EXTERNAL_TABLE"
 {partition_str}
 
   storage_descriptor {{
-    location      = "s3://${{{bucket_var}}}/{table_name}/"
-    input_format  = "{input_format}"
-    output_format = "{output_format}"
+    location = "s3://${{{bucket_var}}}/{table_name}/"
+    input_format  = "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat"
+    output_format = "org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat"
 
     ser_de_info {{
-      serialization_library = "{serde_lib}"
+      serialization_library = "org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe"
     }}
 {columns_str}
+  }}
+
+  parameters = {{
+    "layer" = "{layer}"
   }}
 }}
 '''
@@ -403,7 +450,9 @@ resource "aws_glue_catalog_table" "{table_name}" {{
 
         # Fallback to pattern if wheels not found
         if not framework_wheel_name:
-            framework_wheel_name = "alur_framework-*.whl"
+            # Use exact version from __version__
+            from alur import __version__
+            framework_wheel_name = f"alur_framework-{__version__}-py3-none-any.whl"
         if not project_wheel_name:
             project_name = self.project_root.name
             project_wheel_name = f"{project_name}-*.whl"
@@ -460,112 +509,16 @@ resource "aws_glue_job" "{pipeline_name}_job" {{
 
     def generate_eventbridge_tf(self) -> str:
         """Generate EventBridge rules for scheduled pipelines."""
-        try:
-            from alur.scheduling import ScheduleRegistry
-        except ImportError:
-            # Scheduling module not available, skip
-            return "# No scheduled pipelines\n"
-
-        env = getattr(self.config, "ENVIRONMENT", "dev")
-        region = getattr(self.config, "AWS_REGION", "us-east-1")
-        account_id = getattr(self.config, "AWS_ACCOUNT_ID", "")
-
-        schedules = ScheduleRegistry.get_all()
-
-        if not schedules:
-            return "# No scheduled pipelines\n"
-
-        tf_content = '''# EventBridge Scheduler for Pipeline Automation
-# Auto-generated by Alur Framework
-
-'''
-
-        # Generate IAM role for EventBridge to invoke Glue
-        tf_content += f'''
-# IAM Role for EventBridge to invoke Glue jobs
-resource "aws_iam_role" "eventbridge_glue_role" {{
-  name = "alur-eventbridge-glue-role-{env}"
-
-  assume_role_policy = jsonencode({{
-    Version = "2012-10-17"
-    Statement = [
-      {{
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {{
-          Service = "events.amazonaws.com"
-        }}
-      }}
-    ]
-  }})
-
-  tags = {{
-    Environment = "{env}"
-    ManagedBy   = "alur"
-  }}
-}}
-
-# IAM Policy for EventBridge to start Glue jobs
-resource "aws_iam_role_policy" "eventbridge_glue_policy" {{
-  name = "alur-eventbridge-glue-policy-{env}"
-  role = aws_iam_role.eventbridge_glue_role.id
-
-  policy = jsonencode({{
-    Version = "2012-10-17"
-    Statement = [
-      {{
-        Effect = "Allow"
-        Action = [
-          "glue:StartJobRun"
-        ]
-        Resource = "arn:aws:glue:{region}:{account_id}:job/alur-*-{env}"
-      }}
-    ]
-  }})
-}}
-'''
-
-        # Generate EventBridge rule for each scheduled pipeline
-        for pipeline_name, schedule in schedules.items():
-            job_name = f"alur-{pipeline_name}-{env}"
-            rule_name = f"alur-schedule-{pipeline_name}-{env}"
-
-            enabled_str = "true" if schedule.enabled else "false"
-
-            tf_content += f'''
-# EventBridge Rule for {pipeline_name}
-resource "aws_cloudwatch_event_rule" "{pipeline_name}_schedule" {{
-  name                = "{rule_name}"
-  description         = "{schedule.description}"
-  schedule_expression = "{schedule.cron_expression}"
-  is_enabled          = {enabled_str}
-
-  tags = {{
-    Environment = "{env}"
-    Pipeline    = "{pipeline_name}"
-    ManagedBy   = "alur"
-  }}
-}}
-
-# EventBridge Target - Glue Job
-resource "aws_cloudwatch_event_target" "{pipeline_name}_target" {{
-  rule      = aws_cloudwatch_event_rule.{pipeline_name}_schedule.name
-  target_id = "glue-job-{pipeline_name}"
-  arn       = "arn:aws:glue:{region}:{account_id}:job/{job_name}"
-  role_arn  = aws_iam_role.eventbridge_glue_role.arn
-
-  input = jsonencode({{
-    "--pipeline_name" = "{pipeline_name}"
-  }})
-}}
-'''
-
-        return tf_content
+        return "# Scheduling disabled (batch-only mode)\n"
 
     def generate_all(self, output_dir: Path):
         """Generate all Terraform files."""
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Clear registries from previous runs
+        from alur.decorators import PipelineRegistry
+        PipelineRegistry.clear()
 
         # Load configuration
         self.load_config()
@@ -588,6 +541,7 @@ resource "aws_cloudwatch_event_target" "{pipeline_name}_target" {{
             "provider.tf": self.generate_provider_tf(),
             "s3.tf": self.generate_s3_tf(),
             "iam.tf": self.generate_iam_tf(),
+            "dynamodb.tf": self.generate_dynamodb_tf(),
             "glue_database.tf": self.generate_glue_database_tf(contracts),
             "glue_jobs.tf": self.generate_glue_jobs_tf(),
             "eventbridge.tf": self.generate_eventbridge_tf(),

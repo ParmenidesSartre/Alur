@@ -4,7 +4,7 @@ Edit these values to match your environment.
 
 Environment variables can override these settings:
 - ALUR_AWS_REGION
-- ALUR_BRONZE_BUCKET, ALUR_SILVER_BUCKET, ALUR_GOLD_BUCKET, ALUR_ARTIFACTS_BUCKET
+- ALUR_BRONZE_BUCKET, ALUR_ARTIFACTS_BUCKET, ALUR_LANDING_BUCKET
 - ALUR_ENV (dev/staging/production)
 """
 
@@ -16,9 +16,8 @@ AWS_ACCOUNT_ID = os.getenv("ALUR_AWS_ACCOUNT_ID", "123456789012")  # Replace wit
 
 # S3 Bucket Names (can be overridden via environment variables)
 BRONZE_BUCKET = os.getenv("ALUR_BRONZE_BUCKET", "alur-bronze-dev")
-SILVER_BUCKET = os.getenv("ALUR_SILVER_BUCKET", "alur-silver-dev")
-GOLD_BUCKET = os.getenv("ALUR_GOLD_BUCKET", "alur-gold-dev")
 ARTIFACTS_BUCKET = os.getenv("ALUR_ARTIFACTS_BUCKET", "alur-artifacts-dev")
+LANDING_BUCKET = os.getenv("ALUR_LANDING_BUCKET", "alur-landing-dev")  # Source data bucket
 
 # Glue Database
 GLUE_DATABASE = os.getenv("ALUR_GLUE_DATABASE", "alur_datalake_dev")

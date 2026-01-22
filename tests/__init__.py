@@ -1,1 +1,2 @@
-"""Alur Framework Tests."""
+"""Test package (standard library unittest)."""
+

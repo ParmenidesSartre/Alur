@@ -41,7 +41,7 @@ class RuntimeAdapter(ABC):
         Args:
             df: Spark DataFrame to write
             table_cls: Target table class
-            mode: Write mode ('append', 'overwrite', 'merge')
+            mode: Write mode ('append', 'overwrite')
         """
         pass
 
@@ -155,7 +155,7 @@ class LocalAdapter(RuntimeAdapter):
         Args:
             df: Spark DataFrame to write
             table_cls: Target table class
-            mode: Write mode ('append', 'overwrite', 'merge')
+            mode: Write mode ('append', 'overwrite')
         """
         path = table_cls.get_local_path(base_path=self.base_path)
         format_type = getattr(table_cls, "_format", "parquet")
@@ -174,73 +174,16 @@ class LocalAdapter(RuntimeAdapter):
             writer.parquet(path)
 
         elif format_type == "iceberg":
-            # For Silver tables with merge mode
             if mode == "merge":
-                primary_key = table_cls.get_primary_key()
-                if not primary_key:
-                    raise ValueError(f"Table {table_cls.__name__} requires primary_key for merge mode")
+                raise ValueError("merge mode is not supported in bronze-only mode")
 
-                # Implement merge logic using Delta Lake pattern
-                # For local development, we'll use overwrite for now
-                # In production, this would use actual Iceberg MERGE
-                self._merge_table(df, table_cls, path, primary_key)
-            else:
-                partition_cols = table_cls.get_partition_by()
-                writer = df.write.mode(mode)
-                if partition_cols:
-                    writer = writer.partitionBy(*partition_cols)
-                writer.parquet(path)
-        else:
-            raise ValueError(f"Unsupported format: {format_type}")
-
-    def _merge_table(self, df: DataFrame, table_cls: Type, path: str, primary_key: list) -> None:
-        """
-        Perform merge/upsert operation.
-
-        Args:
-            df: New data to merge
-            table_cls: Table class
-            path: Path to table
-            primary_key: Primary key columns
-        """
-        from .spark import get_spark_session
-
-        spark = get_spark_session(local=True)
-
-        if os.path.exists(path):
-            # Read existing data
-            existing_df = spark.read.parquet(path)
-
-            # Create temp views
-            existing_df.createOrReplaceTempView("existing")
-            df.createOrReplaceTempView("updates")
-
-            # Build merge query
-            # For simplicity, we'll do a full outer join and coalesce
-            # This is a simplified merge - production would use Delta/Iceberg
-            join_condition = " AND ".join([
-                f"existing.{col} = updates.{col}" for col in primary_key
-            ])
-
-            merged_df = spark.sql(f"""
-                SELECT updates.*
-                FROM updates
-                UNION
-                SELECT existing.*
-                FROM existing
-                LEFT JOIN updates ON {join_condition}
-                WHERE {" AND ".join([f"updates.{col} IS NULL" for col in primary_key])}
-            """)
-
-            # Write merged data
             partition_cols = table_cls.get_partition_by()
-            writer = merged_df.write.mode("overwrite")
+            writer = df.write.mode(mode)
             if partition_cols:
                 writer = writer.partitionBy(*partition_cols)
             writer.parquet(path)
         else:
-            # First write, just write the data
-            self.write_table(df, table_cls, mode="overwrite")
+            raise ValueError(f"Unsupported format: {format_type}")
 
     def get_state(self, key: str) -> Optional[Any]:
         """
@@ -308,7 +251,8 @@ class AWSAdapter(RuntimeAdapter):
 
         self.region = region
         self.state_table = state_table
-        self.s3_client = boto3.client("s3", region_name=region)
+        # S3 client without explicit region - will use bucket's region automatically
+        self.s3_client = boto3.client("s3")
         self.glue_client = boto3.client("glue", region_name=region)
         self.dynamodb = boto3.resource("dynamodb", region_name=region)
 
@@ -327,7 +271,7 @@ class AWSAdapter(RuntimeAdapter):
 
         spark = get_spark_session(local=False)
         table_name = table_cls.get_table_name()
-        database = getattr(settings, 'GLUE_DATABASE', 'alur_datalake_dev')
+        database = "bronze_layer"
 
         logger.info(f"Reading table: {database}.{table_name}")
 
@@ -339,21 +283,16 @@ class AWSAdapter(RuntimeAdapter):
         except Exception as catalog_error:
             logger.warning(f"Glue Catalog read failed, falling back to direct S3 read: {catalog_error}")
 
-            # Fallback to direct S3 read
-            from alur.core.contracts import BronzeTable, SilverTable, GoldTable
+            # Fallback to direct S3 read (bronze-only)
+            from alur.core.contracts import BronzeTable
 
-            if issubclass(table_cls, BronzeTable):
-                bucket = getattr(settings, 'BRONZE_BUCKET', 'alur-bronze-dev')
-                layer = 'bronze'
-            elif issubclass(table_cls, SilverTable):
-                bucket = getattr(settings, 'SILVER_BUCKET', 'alur-silver-dev')
-                layer = 'silver'
-            elif issubclass(table_cls, GoldTable):
-                bucket = getattr(settings, 'GOLD_BUCKET', 'alur-gold-dev')
-                layer = 'gold'
-            else:
-                bucket = getattr(settings, 'BRONZE_BUCKET', 'alur-bronze-dev')
-                layer = 'bronze'
+            if not issubclass(table_cls, BronzeTable):
+                raise ValueError(
+                    f"Unsupported table layer for {table_cls.__name__} (bronze-only mode)"
+                )
+
+            bucket = getattr(settings, 'BRONZE_BUCKET', 'alur-bronze-dev')
+            layer = 'bronze'
 
             path = f"s3://{bucket}/{table_name}/"
             format_type = getattr(table_cls, "_format", "parquet")
@@ -404,7 +343,7 @@ Original error: {str(s3_error)}
             mode: Write mode
         """
         from config import settings
-        from alur.core.contracts import BronzeTable, SilverTable, GoldTable
+        from alur.core.contracts import BronzeTable
 
         table_name = table_cls.get_table_name()
 
@@ -424,19 +363,14 @@ Original error: {str(s3_error)}
         if extra:
             logger.warning(f"DataFrame has extra fields that will be ignored: {extra}")
 
-        # Get correct bucket from settings based on table layer
-        if issubclass(table_cls, BronzeTable):
-            bucket = getattr(settings, 'BRONZE_BUCKET', 'alur-bronze-dev')
-            layer = 'bronze'
-        elif issubclass(table_cls, SilverTable):
-            bucket = getattr(settings, 'SILVER_BUCKET', 'alur-silver-dev')
-            layer = 'silver'
-        elif issubclass(table_cls, GoldTable):
-            bucket = getattr(settings, 'GOLD_BUCKET', 'alur-gold-dev')
-            layer = 'gold'
-        else:
-            bucket = getattr(settings, 'BRONZE_BUCKET', 'alur-bronze-dev')
-            layer = 'bronze'
+        # Get correct bucket from settings based on table layer (bronze-only)
+        if not issubclass(table_cls, BronzeTable):
+            raise ValueError(
+                f"Unsupported table layer for {table_cls.__name__} (bronze-only mode)"
+            )
+
+        bucket = getattr(settings, 'BRONZE_BUCKET', 'alur-bronze-dev')
+        layer = 'bronze'
 
         path = f"s3://{bucket}/{table_name}/"
         format_type = getattr(table_cls, "_format", "parquet")
@@ -454,23 +388,56 @@ Original error: {str(s3_error)}
         logger.info(f"Writing {row_count} rows to {layer} table '{table_name}'")
         logger.info(f"Target: {path} (format: {format_type}, mode: {mode})")
 
-        # Handle merge mode for Silver tables
         if mode == "merge":
-            primary_key = table_cls.get_primary_key()
-            if not primary_key:
-                raise ValueError(f"Table {table_cls.__name__} requires primary_key for merge mode")
-            self._merge_table(df, table_cls, path, primary_key)
-        else:
-            try:
-                writer = df.write.mode(mode).format(format_type)
-                if partition_cols:
-                    logger.info(f"Partitioning by: {partition_cols}")
-                    writer = writer.partitionBy(*partition_cols)
+            raise ValueError("merge mode is not supported in bronze-only mode")
 
-                writer.save(path)
-                logger.info(f"Successfully wrote {row_count} rows to {path}")
-            except Exception as e:
-                error_msg = f"""
+        try:
+            writer = df.write.mode(mode).format(format_type)
+            if partition_cols:
+                logger.info(f"Partitioning by: {partition_cols}")
+                writer = writer.partitionBy(*partition_cols)
+
+            writer.save(path)
+            logger.info(f"Successfully wrote {row_count} rows to {path}")
+
+            # Automatically register partitions in Glue Catalog
+            # This eliminates the need for users to manually run MSCK REPAIR TABLE
+            if partition_cols:
+                logger.info("Registering partitions in Glue Catalog...")
+
+                # Use Spark SQL MSCK REPAIR TABLE
+                # This is the most compatible approach across AWS environments
+                try:
+                    from .spark import get_spark_session
+                    spark = get_spark_session(local=False)
+
+                    database = "bronze_layer"
+
+                    # Refresh table metadata first
+                    try:
+                        spark.catalog.refreshTable(f"{database}.{table_name}")
+                    except:
+                        pass  # Table might not be in cache yet
+
+                    # Run MSCK REPAIR TABLE using Spark SQL
+                    repair_query = f"MSCK REPAIR TABLE `{database}`.`{table_name}`"
+                    spark.sql(repair_query)
+
+                    logger.info(f"Partitions registered successfully for {database}.{table_name}")
+
+                except Exception as repair_error:
+                    # Log warning but don't fail the write
+                    error_str = str(repair_error)
+                    logger.warning(f"Failed to auto-register partitions: {error_str}")
+                    logger.warning("Data written successfully, but partitions may need manual registration")
+                    logger.warning(f"Run in Athena: MSCK REPAIR TABLE {database}.{table_name}")
+
+                    # If error is due to Lake Formation or permissions, provide more context
+                    if "Lake Formation" in error_str or "AccessDenied" in error_str:
+                        logger.warning("Note: Partition registration requires Lake Formation permissions.")
+                        logger.warning("Contact your AWS administrator to grant ALTER permissions on the table.")
+        except Exception as e:
+            error_msg = f"""
 [ERROR] Failed to write to table '{table_name}'
 
 Target: {path}
@@ -487,56 +454,8 @@ Possible causes:
 
 Original error: {str(e)}
 """
-                logger.error(error_msg)
-                raise RuntimeError(error_msg)
-
-    def _merge_table(self, df: DataFrame, table_cls: Type, path: str, primary_key: list) -> None:
-        """
-        Perform merge/upsert operation for AWS.
-
-        Args:
-            df: New data to merge
-            table_cls: Table class
-            path: S3 path to table
-            primary_key: Primary key columns
-        """
-        from .spark import get_spark_session
-
-        spark = get_spark_session(local=False)
-        format_type = getattr(table_cls, "_format", "parquet")
-
-        # Check if table exists by trying to read it
-        try:
-            existing_df = spark.read.format(format_type).load(path)
-
-            # Create temp views
-            existing_df.createOrReplaceTempView("existing")
-            df.createOrReplaceTempView("updates")
-
-            # Build merge query
-            join_condition = " AND ".join([
-                f"existing.{col} = updates.{col}" for col in primary_key
-            ])
-
-            merged_df = spark.sql(f"""
-                SELECT updates.*
-                FROM updates
-                UNION
-                SELECT existing.*
-                FROM existing
-                LEFT JOIN updates ON {join_condition}
-                WHERE {" AND ".join([f"updates.{col} IS NULL" for col in primary_key])}
-            """)
-
-            # Write merged data
-            partition_cols = table_cls.get_partition_by()
-            writer = merged_df.write.mode("overwrite").format(format_type)
-            if partition_cols:
-                writer = writer.partitionBy(*partition_cols)
-            writer.save(path)
-        except Exception:
-            # Table doesn't exist, first write
-            self.write_table(df, table_cls, mode="overwrite")
+            logger.error(error_msg)
+            raise RuntimeError(error_msg)
 
     def get_state(self, key: str) -> Optional[Any]:
         """

@@ -29,12 +29,13 @@ This framework demonstrates that modern data lake architectures can be both powe
 ## Key Features
 
 - **Declarative Table Definitions** - Define tables using Python classes with type-safe schema management
-- **Bronze Ingestion Helpers** - Streamlined API for loading raw data with automatic metadata tracking
+- **Production-Grade Bronze Ingestion** - Schema validation, automatic idempotency, scheduled execution, and built-in observability
 - **Pipeline Orchestration** - Automatic dependency resolution with DAG-based execution
 - **Data Quality Validation** - Built-in quality checks with declarative expectations
 - **AWS-Native Deployment** - One-command deployment with auto-generated Terraform infrastructure
 - **Multi-Layer Architecture** - Bronze/Silver/Gold pattern with Iceberg table format support
-- **EventBridge Scheduling** - Declarative cron-based pipeline scheduling
+- **EventBridge Scheduling** - Declarative cron-based pipeline scheduling with automatic triggers
+- **Cost Optimization** - Idempotent ingestion prevents duplicate processing and wasted compute costs
 
 ## Table of Contents
 
@@ -146,20 +147,32 @@ class OrdersBronze(BronzeTable):
 
 ```python
 from alur.decorators import pipeline
+from alur.scheduling import schedule
 from alur.ingestion import load_to_bronze
 from alur.engine import get_spark_session
 from contracts.bronze import OrdersBronze
 
+@schedule(cron="cron(0 2 * * ? *)", description="Daily at 2am UTC")
 @pipeline(sources={}, target=OrdersBronze)
 def ingest_orders():
-    """Load raw orders from S3 into Bronze layer."""
+    """
+    Production pattern: Scheduled bronze ingestion with safety features.
+
+    - Runs automatically via EventBridge
+    - Schema validation prevents bad data
+    - Idempotency prevents duplicate processing (saves costs)
+    - Automatic logging and metrics
+    """
     spark = get_spark_session()
 
-    # Format auto-detected from file extension
     df = load_to_bronze(
         spark,
         source_path="s3://landing-zone/orders/*.csv",
-        source_system="sales_db"
+        source_system="sales_db",
+        target=OrdersBronze,       # Schema validation
+        check_duplicates=True,     # Skip already-processed files
+        validate=True,             # Fail-fast on schema mismatch
+        strict_mode=True
     )
 
     return df
@@ -377,7 +390,12 @@ mypy src/alur
 - Core table contracts (BronzeTable, SilverTable, GoldTable)
 - Type-safe field system with 10+ field types
 - Pipeline decorator with automatic dependency injection
-- Streamlined bronze ingestion API with format auto-detection
+- Production-grade bronze ingestion:
+  - Schema validation against table contracts
+  - Automatic idempotency (DynamoDB state tracking)
+  - Scheduled execution via EventBridge
+  - Built-in logging and metrics
+  - Format auto-detection (CSV, JSON, Parquet)
 - Data quality checks via @expect decorator
 - EventBridge scheduling via @schedule decorator
 - Comprehensive CLI (init, run, deploy, logs, validate, list, destroy)

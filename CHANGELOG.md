@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-01-22
+
+### Added
+- **Automatic Partition Registration** - Data written to partitioned tables is now immediately queryable in Athena without manual `MSCK REPAIR TABLE` commands
+  - Automatically runs `MSCK REPAIR TABLE` after each write operation
+  - Eliminates common friction point for new users
+  - Logged warnings if auto-registration fails (data still written successfully)
+
+### Fixed
+- **CSV Header Validation** - Files with missing required columns are now properly rejected before data ingestion
+  - Prevents data corruption from column shifting
+  - Validates headers against contract schema before reading data
+  - Supports strict mode (fail immediately) and non-strict mode (log and skip)
+- **Landing Bucket IAM Permissions** - Landing bucket permissions are now automatically included in Terraform-generated IAM policies
+  - No manual IAM policy updates required
+  - Landing bucket automatically created during deployment
+- **Metadata Column Validation** - Fixed false validation errors about metadata columns (`_ingested_at`, `_source_system`, `_source_file`)
+  - Metadata columns now properly excluded from schema validation
+- **Windows CLI Support** - Replaced Unicode characters with ASCII for Windows cmd.exe compatibility
+  - No more `UnicodeEncodeError` on Windows
+- **Athena Database Structure** - Simplified database naming convention
+  - Database now named `bronze_layer` (was `alur_bronze_{env}`)
+  - One source = one table (no duplicate base class tables)
+  - Easier to find and query data
+
+### Changed
+- **Table Format** - Using Parquet with Hive partitioning (simple, proven, widely compatible)
+- **Database Naming** - All bronze tables now in `bronze_layer` database regardless of environment/project
+
 ## [0.1.0] - 2026-01-16
 
 ### Added
@@ -92,6 +121,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Web UI for monitoring
 - Cost optimization features
 - Schema evolution support
+
+---
+
+## [0.4.0] - 2026-01-18
+
+### 🔧 Fixed - CRITICAL BUGS
+
+**This release fixes 9 critical bugs discovered during bronze layer testing.**
+The framework was NOT production-ready before this version.
+
+#### Major Architecture Fix - Bronze/Silver/Gold as Databases
+
+**BEFORE (v0.3.x):**
+- Single database: `alur_datalake_dev`
+- Awkward table names: `ordersbronze`, `orderssilver`
+
+**AFTER (v0.4.0):**
+- Separate databases: `alur_bronze_dev`, `alur_silver_dev`, `alur_gold_dev`
+- Clean table names: `orders`, `customers`, `products`
+
+**Developer Impact**: NONE - existing code works unchanged.
+
+#### Changes
+
+- **Added** `BaseTableMeta._derive_clean_table_name()` - automatically strips layer suffixes
+  - `OrdersBronze` → `orders`, `CustomersSilver` → `customers`
+- **Added** `BaseTable.get_layer()` - auto-detect bronze/silver/gold from class hierarchy
+- **Added** `BaseTable.get_database_name()` - generate correct database name per layer
+- **Changed** Infrastructure generator creates 3 separate databases instead of 1
+- **Fixed** S3 paths use clean table names: `s3://alur-bronze-dev/orders/`
+
+#### Bug Fixes
+
+1. **Fixed** `AttributeError: field.spark_type` - changed to `field.to_spark_type()`
+2. **Fixed** DynamoDB schema mismatch - synchronized code and Terraform
+3. **Fixed** `to_iceberg_schema()` method name in empty DataFrame creation
+4. **Fixed** Framework wheel upload - auto-builds during deployment
+5. **Fixed** Pipeline registry clearing - can now redeploy without restart
+6. **Added** DynamoDB infrastructure auto-generation
+7. **Added** DynamoDB IAM permissions to Glue role
+8. **Fixed** S3 paths to use clean table names
+
+#### SQL Examples
+
+```sql
+-- Before (v0.3.x):
+SELECT * FROM alur_datalake_dev.ordersbronze;
+
+-- After (v0.4.0):
+SELECT * FROM alur_bronze_dev.orders;
+SELECT * FROM alur_silver_dev.orders;
+```
+
+#### Migration
+
+**No code changes required** - this is a library fix.
+
+AWS resources will change:
+- Database `alur_datalake_dev` → `alur_bronze_dev`, `alur_silver_dev`, `alur_gold_dev`
+- Table `ordersbronze` → `orders` in `alur_bronze_dev`
+
+**Recommendation**: Run `alur destroy` then redeploy.
 
 ---
 

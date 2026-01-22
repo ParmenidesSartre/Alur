@@ -320,7 +320,7 @@ def deploy(env: str, skip_build: bool, skip_terraform: bool, auto_approve: bool)
         from config import settings
 
         # Validate required settings
-        required_settings = ['AWS_REGION', 'BRONZE_BUCKET', 'SILVER_BUCKET', 'GOLD_BUCKET', 'ARTIFACTS_BUCKET']
+        required_settings = ['AWS_REGION', 'BRONZE_BUCKET', 'ARTIFACTS_BUCKET']
         missing = [s for s in required_settings if not hasattr(settings, s)]
         if missing:
             click.echo(f"[ERROR] Missing required settings in config/settings.py:", err=True)
@@ -505,33 +505,46 @@ def deploy(env: str, skip_build: bool, skip_terraform: bool, auto_approve: bool)
 
         click.echo("  Building Alur framework wheel...")
         try:
+            # Use setuptools directly instead of build package
             result = subprocess.run(
-                ["python", "-m", "build"],
+                ["python", "setup.py", "bdist_wheel"],
                 cwd=alur_root_str,
                 capture_output=True,
-                text=True,
-                check=True
+                text=True
             )
 
-            # Find the framework wheel
-            framework_wheels = list((Path(alur_root_str) / "dist").glob("*.whl"))
-            if framework_wheels:
-                framework_wheel = framework_wheels[-1]
-                framework_wheel_name = framework_wheel.name
-                s3_framework_path = f"s3://{bucket}/wheels/{framework_wheel_name}"
-
-                click.echo(f"  Uploading framework: {framework_wheel_name}")
+            # If setup.py doesn't exist, try build
+            if result.returncode != 0:
                 result = subprocess.run(
-                    ["aws", "s3", "cp", str(framework_wheel), s3_framework_path],
+                    ["python", "-m", "build", "--wheel"],
+                    cwd=alur_root_str,
                     capture_output=True,
                     text=True
                 )
-                if result.returncode == 0:
-                    click.echo("  [OK] Framework wheel uploaded")
+
+            # Find the framework wheel
+            dist_path = Path(alur_root_str) / "dist"
+            if dist_path.exists():
+                framework_wheels = sorted(dist_path.glob("*.whl"), key=lambda p: p.stat().st_mtime)
+                if framework_wheels:
+                    framework_wheel = framework_wheels[-1]  # Get most recent
+                    framework_wheel_name = framework_wheel.name
+                    s3_framework_path = f"s3://{bucket}/wheels/{framework_wheel_name}"
+
+                    click.echo(f"  Uploading framework: {framework_wheel_name}")
+                    result = subprocess.run(
+                        ["aws", "s3", "cp", str(framework_wheel), s3_framework_path],
+                        capture_output=True,
+                        text=True
+                    )
+                    if result.returncode == 0:
+                        click.echo("  [OK] Framework wheel uploaded")
+                    else:
+                        click.echo(f"  Warning: Framework upload failed: {result.stderr}")
                 else:
-                    click.echo(f"  Warning: Framework upload failed: {result.stderr}")
+                    click.echo("  Warning: Framework wheel not found")
             else:
-                click.echo("  Warning: Framework wheel not found")
+                click.echo("  Warning: dist directory not found")
 
         except Exception as e:
             click.echo(f"  Warning: Could not build framework wheel: {e}")
@@ -647,26 +660,6 @@ resource "aws_s3_bucket" "bronze" {{
   }}
 }}
 
-resource "aws_s3_bucket" "silver" {{
-  bucket = "{getattr(settings, 'SILVER_BUCKET', 'alur-silver-dev')}"
-
-  tags = {{
-    Name        = "Alur Silver Layer"
-    Environment = "{getattr(settings, 'ENVIRONMENT', 'dev')}"
-    Layer       = "silver"
-  }}
-}}
-
-resource "aws_s3_bucket" "gold" {{
-  bucket = "{getattr(settings, 'GOLD_BUCKET', 'alur-gold-dev')}"
-
-  tags = {{
-    Name        = "Alur Gold Layer"
-    Environment = "{getattr(settings, 'ENVIRONMENT', 'dev')}"
-    Layer       = "gold"
-  }}
-}}
-
 resource "aws_s3_bucket" "artifacts" {{
   bucket = "{getattr(settings, 'ARTIFACTS_BUCKET', 'alur-artifacts-dev')}"
 
@@ -779,8 +772,6 @@ def status(env: str):
         from config import settings
         region = settings.AWS_REGION
         bronze_bucket = settings.BRONZE_BUCKET
-        silver_bucket = settings.SILVER_BUCKET
-        gold_bucket = settings.GOLD_BUCKET
         artifacts_bucket = settings.ARTIFACTS_BUCKET
         glue_database = settings.GLUE_DATABASE
     except ImportError:
@@ -794,8 +785,7 @@ def status(env: str):
 
     # Check S3 buckets
     click.echo(f"\nS3 Buckets:")
-    for bucket_name, layer in [(bronze_bucket, "Bronze"), (silver_bucket, "Silver"),
-                                (gold_bucket, "Gold"), (artifacts_bucket, "Artifacts")]:
+    for bucket_name, layer in [(bronze_bucket, "Bronze"), (artifacts_bucket, "Artifacts")]:
         try:
             result = subprocess.run(
                 ["aws", "s3", "ls", f"s3://{bucket_name}/", "--region", region],
@@ -817,9 +807,9 @@ def status(env: str):
                 size = size_line[0].split(':')[1].strip() if size_line else "Unknown"
                 objects = objects_line[0].split(':')[1].strip() if objects_line else "Unknown"
 
-                click.echo(f"  ✓ {layer:10} {bucket_name:30} ({objects} objects, {size} bytes)")
+                click.echo(f"  [OK] {layer:10} {bucket_name:30} ({objects} objects, {size} bytes)")
             else:
-                click.echo(f"  ✗ {layer:10} {bucket_name:30} (not found)")
+                click.echo(f"  [ERROR] {layer:10} {bucket_name:30} (not found)")
         except Exception as e:
             click.echo(f"  ? {layer:10} {bucket_name:30} (error checking: {str(e)})")
 
@@ -832,7 +822,7 @@ def status(env: str):
             text=True
         )
         if result.returncode == 0:
-            click.echo(f"  ✓ Database exists: {glue_database}")
+            click.echo(f"  [OK] Database exists: {glue_database}")
 
             # List tables
             result_tables = subprocess.run(
@@ -849,7 +839,7 @@ def status(env: str):
             else:
                 click.echo(f"  No tables found")
         else:
-            click.echo(f"  ✗ Database not found: {glue_database}")
+            click.echo(f"  [ERROR] Database not found: {glue_database}")
     except Exception as e:
         click.echo(f"  ? Error checking database: {str(e)}")
 
@@ -904,8 +894,6 @@ def destroy(env: str, force: bool, auto_approve: bool):
         from config import settings
         region = settings.AWS_REGION
         bronze_bucket = settings.BRONZE_BUCKET
-        silver_bucket = settings.SILVER_BUCKET
-        gold_bucket = settings.GOLD_BUCKET
         artifacts_bucket = settings.ARTIFACTS_BUCKET
     except ImportError:
         click.echo("[ERROR] Not in an Alur project directory", err=True)
@@ -914,7 +902,7 @@ def destroy(env: str, force: bool, auto_approve: bool):
     # Empty S3 buckets if force is enabled
     if force:
         click.echo("\n[1/2] Emptying S3 buckets...")
-        for bucket in [bronze_bucket, silver_bucket, gold_bucket, artifacts_bucket]:
+        for bucket in [bronze_bucket, artifacts_bucket]:
             try:
                 click.echo(f"  Emptying: {bucket}")
                 result = subprocess.run(
@@ -923,7 +911,7 @@ def destroy(env: str, force: bool, auto_approve: bool):
                     text=True
                 )
                 if result.returncode == 0:
-                    click.echo(f"    ✓ Emptied {bucket}")
+                    click.echo(f"    [OK] Emptied {bucket}")
                 else:
                     # Bucket might not exist, that's okay
                     click.echo(f"    - {bucket} (already empty or doesn't exist)")
@@ -1013,7 +1001,7 @@ def run(pipeline_name: str, env: str, wait: bool):
         response = json.loads(result.stdout)
         job_run_id = response.get("JobRunId")
 
-        click.echo(f"  ✓ Job started successfully")
+        click.echo(f"  [OK] Job started successfully")
         click.echo(f"  Job Run ID: {job_run_id}")
 
         if not wait:
@@ -1152,35 +1140,22 @@ def validate():
     click.echo("\n[1/5] Validating contracts...")
     try:
         import contracts.bronze
-        import contracts.silver
-        from alur.core import BronzeTable, SilverTable, GoldTable
+        from alur.core import BronzeTable
 
         # Check all contract classes
-        for module in [contracts.bronze, contracts.silver]:
+        for module in [contracts.bronze]:
             for name in dir(module):
                 obj = getattr(module, name)
-                if isinstance(obj, type) and issubclass(obj, (BronzeTable, SilverTable, GoldTable)):
-                    if obj not in [BronzeTable, SilverTable, GoldTable]:
+                if isinstance(obj, type) and issubclass(obj, (BronzeTable,)):
+                    if obj not in [BronzeTable]:
                         # Validate has fields
                         fields = obj.get_fields()
                         if not fields:
                             warnings.append(f"Table {name} has no fields defined")
                         else:
-                            click.echo(f"  ✓ {name}: {len(fields)} fields")
+                            click.echo(f"  [OK] {name}: {len(fields)} fields")
 
-        try:
-            import contracts.gold
-            for name in dir(contracts.gold):
-                obj = getattr(contracts.gold, name)
-                if isinstance(obj, type) and issubclass(obj, GoldTable):
-                    if obj != GoldTable:
-                        fields = obj.get_fields()
-                        if not fields:
-                            warnings.append(f"Table {name} has no fields defined")
-                        else:
-                            click.echo(f"  ✓ {name}: {len(fields)} fields")
-        except ImportError:
-            pass  # Gold layer is optional
+        # gold layer disabled (bronze-only)
 
     except ImportError as e:
         errors.append(f"Failed to import contracts: {str(e)}")
@@ -1196,7 +1171,7 @@ def validate():
             warnings.append("No pipelines registered")
         else:
             for name, pipeline in all_pipelines.items():
-                click.echo(f"  ✓ {name}")
+                click.echo(f"  [OK] {name}")
                 click.echo(f"      Sources: {list(pipeline.sources.keys())}")
                 click.echo(f"      Target: {pipeline.target.get_table_name()}")
 
@@ -1208,7 +1183,7 @@ def validate():
     try:
         from alur.decorators import PipelineRegistry
         PipelineRegistry.validate_dag()
-        click.echo("  ✓ No circular dependencies detected")
+        click.echo("  [OK] No circular dependencies detected")
     except ValueError as e:
         errors.append(f"DAG validation failed: {str(e)}")
     except Exception as e:
@@ -1219,14 +1194,13 @@ def validate():
     try:
         from config import settings
 
-        required_attrs = ['AWS_REGION', 'BRONZE_BUCKET', 'SILVER_BUCKET',
-                         'GOLD_BUCKET', 'ARTIFACTS_BUCKET', 'GLUE_DATABASE']
+        required_attrs = ['AWS_REGION', 'BRONZE_BUCKET', 'ARTIFACTS_BUCKET', 'GLUE_DATABASE']
 
         for attr in required_attrs:
             if not hasattr(settings, attr):
                 errors.append(f"Missing required setting: {attr}")
             else:
-                click.echo(f"  ✓ {attr}: {getattr(settings, attr)}")
+                click.echo(f"  [OK] {attr}: {getattr(settings, attr)}")
 
     except ImportError:
         errors.append("Failed to import config.settings")
@@ -1245,7 +1219,7 @@ def validate():
         s3_tf = generator.generate_s3_tf()
         glue_db_tf = generator.generate_glue_database_tf()
 
-        click.echo(f"  ✓ Terraform generation successful")
+        click.echo(f"  [OK] Terraform generation successful")
 
     except Exception as e:
         errors.append(f"Terraform generation failed: {str(e)}")
@@ -1291,26 +1265,20 @@ def list(verbose: bool):
     try:
         import pipelines
         import contracts.bronze
-        import contracts.silver
-        try:
-            import contracts.gold
-        except ImportError:
-            pass
+        # bronze-only mode: no silver/gold contracts
 
     except ImportError as e:
         click.echo(f"[ERROR] Failed to import: {str(e)}", err=True)
         return 1
 
     # List contracts
-    from alur.core import BronzeTable, SilverTable, GoldTable
+    from alur.core import BronzeTable
 
-    click.echo("\n📋 CONTRACTS")
+    click.echo("\n[CONTRACTS] CONTRACTS")
     click.echo("-" * 60)
 
     for layer_name, base_class, module_name in [
         ("Bronze", BronzeTable, "contracts.bronze"),
-        ("Silver", SilverTable, "contracts.silver"),
-        ("Gold", GoldTable, "contracts.gold"),
     ]:
         try:
             module = __import__(module_name, fromlist=[''])

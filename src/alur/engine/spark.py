@@ -49,12 +49,7 @@ def get_spark_session(
 
     else:
         # Cluster mode configuration (AWS Glue/EMR)
-        builder = builder.config("spark.sql.catalog.glue", "org.apache.iceberg.spark.SparkCatalog")
-        builder = builder.config("spark.sql.catalog.glue.catalog-impl", "org.apache.iceberg.aws.glue.GlueCatalog")
-        builder = builder.config("spark.sql.catalog.glue.warehouse", "s3://alur-datalake/")
-        builder = builder.config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
-
-        # Enable Hive support
+        # Enable Hive support for Glue Catalog integration
         builder = builder.enableHiveSupport()
 
     # Apply additional custom config
