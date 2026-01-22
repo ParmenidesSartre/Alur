@@ -1,8 +1,8 @@
 # Alur Framework
 
-**A Python framework for building scalable data lake pipelines with Apache Iceberg and Spark.**
+**A production-ready Python framework for building cost-effective data lake pipelines with Apache Spark on AWS.**
 
-[![Version](https://img.shields.io/badge/version-0.3.0-blue.svg)](https://github.com/ParmenidesSartre/Alur/releases)
+[![Version](https://img.shields.io/badge/version-0.6.0-blue.svg)](https://github.com/ParmenidesSartre/Alur/releases)
 [![Python](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -29,13 +29,14 @@ This framework demonstrates that modern data lake architectures can be both powe
 ## Key Features
 
 - **Declarative Table Definitions** - Define tables using Python classes with type-safe schema management
-- **Production-Grade Bronze Ingestion** - Schema validation, automatic idempotency, scheduled execution, and built-in observability
+- **Production-Grade Bronze Ingestion** - Schema validation, automatic idempotency, multi-source support, and Parquet output
+- **File-Level Idempotency** - DynamoDB-based state tracking prevents duplicate ingestion and saves costs
+- **Multi-Source CSV Ingestion** - Ingest from multiple S3 locations in a single pipeline with independent tracking
 - **Pipeline Orchestration** - Automatic dependency resolution with DAG-based execution
 - **Data Quality Validation** - Built-in quality checks with declarative expectations
 - **AWS-Native Deployment** - One-command deployment with auto-generated Terraform infrastructure
-- **Multi-Layer Architecture** - Bronze/Silver/Gold pattern with Iceberg table format support
-- **EventBridge Scheduling** - Declarative cron-based pipeline scheduling with automatic triggers
-- **Cost Optimization** - Idempotent ingestion prevents duplicate processing and wasted compute costs
+- **Automatic Partition Registration** - Data immediately queryable in Athena after writes
+- **Cost Optimization** - Serverless architecture with zero idle costs, pay only when pipelines run
 
 ## Table of Contents
 
@@ -147,51 +148,57 @@ class OrdersBronze(BronzeTable):
 
 ```python
 from alur.decorators import pipeline
-from alur.scheduling import schedule
 from alur.ingestion import load_to_bronze
 from alur.engine import get_spark_session
 from contracts.bronze import OrdersBronze
 
-@schedule(cron="cron(0 2 * * ? *)", description="Daily at 2am UTC")
 @pipeline(sources={}, target=OrdersBronze)
 def ingest_orders():
     """
-    Production pattern: Scheduled bronze ingestion with safety features.
+    Production pattern: Bronze ingestion with safety features.
 
-    - Runs automatically via EventBridge
     - Schema validation prevents bad data
     - Idempotency prevents duplicate processing (saves costs)
+    - Multi-source support for ingesting from multiple S3 locations
     - Automatic logging and metrics
     """
     spark = get_spark_session()
 
+    # Multi-source ingestion example
     df = load_to_bronze(
         spark,
-        source_path="s3://landing-zone/orders/*.csv",
+        source_path=[
+            "s3://landing-zone/orders/*.csv",
+            "s3://landing-zone/archive/*.csv"
+        ],
         source_system="sales_db",
-        target=OrdersBronze,       # Schema validation
-        check_duplicates=True,     # Skip already-processed files
-        validate=True,             # Fail-fast on schema mismatch
-        strict_mode=True
+        target=OrdersBronze,           # Schema validation
+        enable_idempotency=True,       # Skip already-processed files (default)
+        validate=True,                 # Validate CSV headers
+        strict_mode=False              # Log and skip bad files
     )
 
     return df
 ```
 
-**pipelines/orders.py:**
+**pipelines/process_orders.py:**
 
 ```python
 from alur.decorators import pipeline
 from alur.quality import expect, not_empty, no_nulls_in_column
 from contracts.bronze import OrdersBronze
-from contracts.silver import OrdersSilver
 from pyspark.sql import functions as F
 
 @expect(name="has_data", check_fn=not_empty)
 @expect(name="valid_ids", check_fn=no_nulls_in_column("order_id"))
-@pipeline(sources={"orders": OrdersBronze}, target=OrdersSilver)
-def clean_orders(orders):
-    """Clean and validate orders."""
+@pipeline(sources={"orders": OrdersBronze}, target=OrdersBronze)
+def process_orders(orders):
+    """
+    Clean and enrich orders data.
+
+    Note: This example processes Bronze → Bronze for demonstration.
+    Silver/Gold layers are on the roadmap.
+    """
 
     # Filter invalid records
     cleaned = orders.filter(
@@ -200,11 +207,8 @@ def clean_orders(orders):
     )
 
     # Add processing metadata
-    cleaned = cleaned.withColumn("status", F.lit("processed"))
-    cleaned = cleaned.withColumn("updated_at", F.current_timestamp())
-
-    # Drop Bronze metadata columns
-    cleaned = cleaned.drop("_ingested_at", "_source_system", "_source_file")
+    cleaned = cleaned.withColumn("processing_status", F.lit("validated"))
+    cleaned = cleaned.withColumn("validated_at", F.current_timestamp())
 
     return cleaned
 ```
@@ -228,11 +232,13 @@ This will:
 
 ### Table Layers
 
+**Currently Implemented:**
+
 | Layer | Class | Format | Write Mode | Purpose |
 |-------|-------|--------|------------|---------|
-| Bronze | `BronzeTable` | Parquet | Append | Raw data with metadata tracking |
-| Silver | `SilverTable` | Iceberg | Merge | Cleaned and validated data |
-| Gold | `GoldTable` | Iceberg | Overwrite | Business-ready aggregates |
+| Bronze | `BronzeTable` | Parquet | Append | Raw data with automatic metadata and idempotency tracking |
+
+**Note:** Silver and Gold layers with Apache Iceberg support are on the roadmap. Current focus is on production-ready Bronze ingestion with idempotency and multi-source support.
 
 ### Field Types
 
@@ -256,7 +262,8 @@ All fields support `nullable` parameter and optional `description` metadata.
 ### Pipeline Decorators
 
 ```python
-from alur import pipeline, expect, schedule
+from alur import pipeline, expect
+from alur.quality import not_empty, no_nulls_in_column
 
 # Basic pipeline
 @pipeline(sources={"input": InputTable}, target=OutputTable)
@@ -269,32 +276,43 @@ def transform(input):
 @pipeline(sources={"input": InputTable}, target=OutputTable)
 def validated_transform(input):
     return input.transform(...)
-
-# With scheduled execution
-@schedule(cron="cron(0 2 * * ? *)", description="Daily at 2am UTC")
-@pipeline(sources={"input": InputTable}, target=OutputTable)
-def scheduled_transform(input):
-    return input.transform(...)
 ```
 
 ### Bronze Ingestion API
 
 ```python
 from alur.ingestion import load_to_bronze, add_bronze_metadata
+from contracts.bronze import OrdersBronze
 
-# Auto-detection of format from file extension
+# Single source with idempotency
 df = load_to_bronze(
     spark,
-    source_path="s3://bucket/data/*.csv",
+    source_path="s3://bucket/orders/*.csv",
     source_system="sales_db",
+    target=OrdersBronze,           # Required for schema validation
+    enable_idempotency=True,       # Default: prevents duplicate ingestion
+    validate=True,                 # Validate CSV headers
+    strict_mode=False,             # Log and skip bad files
     options={"header": "true"}
 )
 
-# Manual metadata addition
+# Multi-source ingestion
+df = load_to_bronze(
+    spark,
+    source_path=[
+        "s3://bucket/orders/*.csv",
+        "s3://bucket/archive/*.csv"
+    ],
+    source_system="sales_db",
+    target=OrdersBronze,
+    enable_idempotency=True
+)
+
+# Manual metadata addition (for non-CSV sources)
 bronze_df = add_bronze_metadata(
     df,
     source_system="api",
-    exclude=["_source_file"],  # Exclude irrelevant metadata
+    exclude_metadata=["_source_file"],  # Exclude irrelevant metadata
     custom_metadata={"_api_version": "v2"}
 )
 ```
@@ -383,34 +401,42 @@ mypy src/alur
 
 ## Project Status
 
-**Current Version:** 0.3.0
+**Current Version:** 0.6.0 (Released 2026-01-22)
 
 ### Implemented Features
 
-- Core table contracts (BronzeTable, SilverTable, GoldTable)
+✅ **Bronze Layer (Production-Ready)**
+- BronzeTable with Parquet format and Hive partitioning
 - Type-safe field system with 10+ field types
 - Pipeline decorator with automatic dependency injection
-- Production-grade bronze ingestion:
+- Production-grade CSV ingestion:
+  - File-level idempotency using DynamoDB state tracking
+  - Multi-source CSV ingestion from multiple S3 locations
   - Schema validation against table contracts
-  - Automatic idempotency (DynamoDB state tracking)
-  - Scheduled execution via EventBridge
+  - CSV header validation with strict/non-strict modes
+  - Automatic metadata columns (_ingested_at, _source_system, _source_file)
   - Built-in logging and metrics
-  - Format auto-detection (CSV, JSON, Parquet)
 - Data quality checks via @expect decorator
-- EventBridge scheduling via @schedule decorator
+- Automatic partition registration in Glue Catalog
 - Comprehensive CLI (init, run, deploy, logs, validate, list, destroy)
 - AWSAdapter with AWS Glue integration
-- Auto-generated Terraform infrastructure
+- Auto-generated Terraform infrastructure (S3, Glue, DynamoDB, IAM)
 - One-command deployment workflow
 - Pre-deployment validation and error checking
 
 ### Roadmap
 
+🔜 **Near-Term**
+- Silver/Gold layers with Apache Iceberg support
+- EventBridge scheduling via @schedule decorator
+- Batch DynamoDB operations for better idempotency performance
+- File version detection using S3 ETag comparison
+
+📋 **Future**
 - Schema evolution support for Iceberg tables
 - Additional source connectors (MySQL, PostgreSQL, Kafka, REST APIs)
 - Data lineage tracking and visualization
 - Web UI for pipeline monitoring
-- Cost optimization features
 - Enhanced observability and logging
 
 ## Contributing
