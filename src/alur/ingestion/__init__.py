@@ -9,7 +9,7 @@ Batch-only mode:
 - S3 paths only (s3://bucket/prefix/*.csv)
 """
 
-from typing import Optional, List, Dict, Any, Callable, Type
+from typing import Optional, List, Dict, Any, Callable, Type, Union
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.types import StructType, DataType
@@ -318,7 +318,7 @@ def validate_schema(
 
 def load_to_bronze(
     spark: SparkSession,
-    source_path: str,
+    source_path: Union[str, List[str]],
     source_system: str,
     target: Optional[Type] = None,
     format: Optional[str] = None,
@@ -328,53 +328,115 @@ def load_to_bronze(
     custom_metadata: Optional[Dict[str, Any]] = None,
     validate: bool = True,
     strict_mode: bool = True,
-    check_duplicates: bool = True,
+    enable_idempotency: bool = True,
     force_reprocess: bool = False
 ) -> DataFrame:
     """
-    Load files into Bronze layer with schema enforcement.
+    Load files into Bronze layer with schema enforcement and idempotency.
 
-    Note: check_duplicates and force_reprocess parameters are not yet implemented.
+    Supports multiple source paths for multi-source ingestion. Each file is tracked
+    in DynamoDB to prevent duplicate processing.
+
+    Args:
+        spark: SparkSession
+        source_path: S3 path(s) to source files. Can be:
+            - Single path: "s3://bucket/path/*.csv"
+            - List of paths: ["s3://bucket/source1/*.csv", "s3://bucket/source2/*.csv"]
+        source_system: Name of source system for metadata
+        target: Target table class for schema validation
+        format: File format (default: csv)
+        options: Spark read options
+        schema: Spark schema (overrides target schema)
+        exclude_metadata: Metadata columns to exclude
+        custom_metadata: Additional metadata to add
+        validate: Enable schema validation
+        strict_mode: Fail on validation errors (True) or skip files (False)
+        enable_idempotency: Check DynamoDB for already-processed files (default: True)
+        force_reprocess: Reprocess files even if already processed (default: False)
+
+    Returns:
+        DataFrame with bronze metadata
     """
-    # Validate unimplemented parameters - fail loudly instead of silently ignoring
-    if check_duplicates is not True:
-        raise NotImplementedError(
-            "check_duplicates parameter is not yet implemented. "
-            "Currently all files matching the source_path pattern will be processed. "
-            "For idempotent ingestion, use the batch_ingestion module or implement "
-            "your own deduplication logic."
-        )
+    # Validate unimplemented parameters
     if force_reprocess is not False:
         raise NotImplementedError(
             "force_reprocess parameter is not yet implemented. "
-            "All files matching the source_path pattern will be processed."
+            "Set enable_idempotency=False to disable idempotency checks."
         )
 
-    _validate_csv_s3_source_path(source_path)
+    # Normalize source_path to list
+    source_paths = [source_path] if isinstance(source_path, str) else source_path
+
+    # Validate all source paths
+    for path in source_paths:
+        _validate_csv_s3_source_path(path)
 
     start_time = time.time()
-    logger.info(f"Starting bronze ingestion from {source_path}")
+    logger.info(f"Starting bronze ingestion from {len(source_paths)} source(s)")
 
-    # 1. List Files (Optional)
-    found_files = _list_s3_files(source_path) if source_path.startswith("s3://") else []
-    if found_files:
-        files_to_process = found_files
-    else:
-        # Fallback: rely on Spark to glob everything
-        files_to_process = [{'path': source_path, 'last_modified': 'unknown', 'size': 0}]
+    # 1. List Files from All Sources
+    all_files = []
+    for source in source_paths:
+        logger.info(f"Listing files from: {source}")
+        found_files = _list_s3_files(source) if source.startswith("s3://") else []
+        if found_files:
+            all_files.extend(found_files)
+        else:
+            # Fallback: rely on Spark to glob
+            all_files.append({'path': source, 'last_modified': 'unknown', 'size': 0})
 
-    if not files_to_process:
-        logger.info("No new files found to process.")
+    if not all_files:
+        logger.info("No files found to process.")
         # Return empty DF with correct schema
         if target:
             return spark.createDataFrame([], schema=target.to_iceberg_schema())
         return spark.createDataFrame([], schema=StructType([]))
 
-    # 2. Validate CSV Headers (Before Reading Data)
-    validated_files = []
-    skipped_files = []
+    logger.info(f"Found {len(all_files)} total file(s) across all sources")
 
-    if target and validate and found_files:
+    # 2. Check Idempotency (Skip Already-Processed Files)
+    files_to_process = all_files
+    if enable_idempotency and target:
+        logger.info("Checking for already-processed files...")
+
+        # Get AWS adapter for state checking
+        from ..engine.adapter import AWSAdapter
+        from config import settings
+
+        region = getattr(settings, 'AWS_REGION', 'us-east-1')
+        adapter = AWSAdapter(region=region)
+
+        ingestion_key = target.get_table_name()
+        unprocessed_files = []
+        skipped_files = []
+
+        for file_info in all_files:
+            file_path = file_info['path']
+            if adapter.is_file_processed(ingestion_key, file_path):
+                skipped_files.append(file_path)
+                logger.info(f"Skipping already-processed file: {file_path}")
+            else:
+                unprocessed_files.append(file_info)
+
+        files_to_process = unprocessed_files
+
+        if skipped_files:
+            logger.info(f"Skipped {len(skipped_files)} already-processed file(s)")
+
+        if not files_to_process:
+            logger.info("All files have been processed. No new data to ingest.")
+            # Return empty DF with correct schema
+            if target:
+                return spark.createDataFrame([], schema=target.to_iceberg_schema())
+            return spark.createDataFrame([], schema=StructType([]))
+
+    logger.info(f"Processing {len(files_to_process)} file(s)")
+
+    # 3. Validate CSV Headers (Before Reading Data)
+    validated_files = []
+    schema_skipped_files = []
+
+    if target and validate and files_to_process:
         # Only validate if we have explicit file list (not wildcard fallback)
         logger.info(f"Validating CSV headers for {len(files_to_process)} files against {target.__name__} contract...")
 
@@ -402,14 +464,14 @@ def load_to_bronze(
                 else:
                     # Log and skip file in non-strict mode
                     logger.warning(f"SKIPPING FILE - {error_msg}")
-                    skipped_files.append({'file': file_path, 'reason': validation_result['error_message']})
+                    schema_skipped_files.append({'file': file_path, 'reason': validation_result['error_message']})
 
         # Update files to process with only validated files
         files_to_process = validated_files
 
-        if skipped_files:
-            logger.warning(f"Skipped {len(skipped_files)} files due to schema validation failures:")
-            for skip_info in skipped_files:
+        if schema_skipped_files:
+            logger.warning(f"Skipped {len(schema_skipped_files)} files due to schema validation failures:")
+            for skip_info in schema_skipped_files:
                 logger.warning(f"  - {skip_info['file']}: {skip_info['reason']}")
 
         if not files_to_process:
@@ -420,7 +482,7 @@ def load_to_bronze(
 
         logger.info(f"Proceeding to read {len(files_to_process)} validated files")
 
-    # 3. Determine Schema (Contract-Driven or Inferred)
+    # 4. Determine Schema (Contract-Driven or Inferred)
     read_schema = schema
     if target and not read_schema:
         # Use the contract schema for reading! (Schema-on-Read)
@@ -471,12 +533,21 @@ def load_to_bronze(
 
     # 6. Validation (Optional post-read check for type mismatches)
     if target and validate:
-        # Note: Header validation already done in step 2. This checks for type compatibility.
+        # Note: Header validation already done in step 3. This checks for type compatibility.
         validate_schema(df, target=target, strict_mode=strict_mode, exclude_metadata=True)
 
     duration = time.time() - start_time
     logger.info(f"Ingestion prep complete. Duration: {duration:.2f}s")
-    
+
+    # Store file tracking metadata for idempotency marking after write
+    if enable_idempotency and target:
+        # Attach file tracking info to DataFrame for later use in write_table()
+        df._alur_files_to_track = {
+            'ingestion_key': target.get_table_name(),
+            'files': files_to_process,
+            'enable_idempotency': True
+        }
+
     return df
 
 

@@ -239,13 +239,13 @@ class LocalAdapter(RuntimeAdapter):
 class AWSAdapter(RuntimeAdapter):
     """AWS adapter using S3, Glue Catalog, and DynamoDB for state."""
 
-    def __init__(self, region: str = "us-east-1", state_table: str = "alur-state"):
+    def __init__(self, region: str = "us-east-1", state_table: str = "alur-ingestion-state"):
         """
         Initialize AWSAdapter.
 
         Args:
             region: AWS region
-            state_table: DynamoDB table name for state management
+            state_table: DynamoDB table name for ingestion state tracking
         """
         import boto3
 
@@ -400,6 +400,47 @@ Original error: {str(s3_error)}
             writer.save(path)
             logger.info(f"Successfully wrote {row_count} rows to {path}")
 
+            # Mark files as processed for idempotency (if enabled)
+            if hasattr(df, '_alur_files_to_track'):
+                tracking_info = df._alur_files_to_track
+                if tracking_info.get('enable_idempotency'):
+                    logger.info("Marking files as processed for idempotency...")
+
+                    ingestion_key = tracking_info['ingestion_key']
+                    files_processed = tracking_info['files']
+
+                    for file_info in files_processed:
+                        file_path = file_info['path']
+                        file_size = file_info.get('size', 0)
+                        # Get ETag from S3 metadata
+                        try:
+                            from urllib.parse import urlparse
+                            parsed = urlparse(file_path)
+                            bucket = parsed.netloc
+                            key = parsed.path.lstrip('/')
+
+                            obj_metadata = self.s3_client.head_object(Bucket=bucket, Key=key)
+                            file_etag = obj_metadata.get('ETag', '').strip('"')
+                        except Exception as e:
+                            logger.warning(f"Could not get ETag for {file_path}: {e}")
+                            file_etag = "unknown"
+
+                        # Estimate rows per file (total rows / num files)
+                        rows_per_file = row_count // len(files_processed) if files_processed else row_count
+
+                        try:
+                            self.mark_file_processed(
+                                ingestion_key=ingestion_key,
+                                file_path=file_path,
+                                file_size=file_size,
+                                file_etag=file_etag,
+                                rows_ingested=rows_per_file
+                            )
+                        except Exception as e:
+                            logger.warning(f"Failed to mark file as processed: {file_path}: {e}")
+
+                    logger.info(f"Marked {len(files_processed)} file(s) as processed")
+
             # Automatically register partitions in Glue Catalog
             # This eliminates the need for users to manually run MSCK REPAIR TABLE
             if partition_cols:
@@ -482,6 +523,92 @@ Original error: {str(e)}
         """
         table = self.dynamodb.Table(self.state_table)
         table.put_item(Item={"key": key, "value": json.dumps(value)})
+
+    def is_file_processed(self, ingestion_key: str, file_path: str) -> bool:
+        """
+        Check if a file has already been processed.
+
+        Args:
+            ingestion_key: Unique key for this ingestion (e.g., target table name)
+            file_path: S3 path of the file
+
+        Returns:
+            True if file was already processed
+        """
+        table = self.dynamodb.Table(self.state_table)
+
+        try:
+            response = table.get_item(
+                Key={
+                    "ingestion_key": ingestion_key,
+                    "file_path": file_path
+                }
+            )
+            return "Item" in response
+        except Exception as e:
+            logger.warning(f"Error checking file state: {e}")
+            return False  # On error, assume not processed (fail-safe)
+
+    def mark_file_processed(
+        self,
+        ingestion_key: str,
+        file_path: str,
+        file_size: int,
+        file_etag: str,
+        rows_ingested: int
+    ) -> None:
+        """
+        Mark a file as successfully processed.
+
+        Args:
+            ingestion_key: Unique key for this ingestion (e.g., target table name)
+            file_path: S3 path of the file
+            file_size: File size in bytes
+            file_etag: S3 ETag for file version tracking
+            rows_ingested: Number of rows ingested from this file
+        """
+        import time
+
+        table = self.dynamodb.Table(self.state_table)
+
+        try:
+            table.put_item(
+                Item={
+                    "ingestion_key": ingestion_key,
+                    "file_path": file_path,
+                    "file_size": file_size,
+                    "file_etag": file_etag,
+                    "rows_ingested": rows_ingested,
+                    "processed_at": int(time.time()),
+                    "processed_at_iso": time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
+                }
+            )
+            logger.info(f"Marked file as processed: {file_path}")
+        except Exception as e:
+            logger.warning(f"Failed to mark file as processed: {e}")
+            # Don't fail the job if state tracking fails
+
+    def get_processed_files(self, ingestion_key: str) -> list:
+        """
+        Get list of all processed files for an ingestion key.
+
+        Args:
+            ingestion_key: Unique key for this ingestion
+
+        Returns:
+            List of file paths that have been processed
+        """
+        table = self.dynamodb.Table(self.state_table)
+
+        try:
+            response = table.query(
+                KeyConditionExpression="ingestion_key = :key",
+                ExpressionAttributeValues={":key": ingestion_key}
+            )
+            return [item["file_path"] for item in response.get("Items", [])]
+        except Exception as e:
+            logger.warning(f"Error querying processed files: {e}")
+            return []
 
     def table_exists(self, table_cls: Type) -> bool:
         """

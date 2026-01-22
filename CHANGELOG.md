@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-01-22
+
+### Added
+- **File-Level Idempotency for Bronze Ingestion** - Prevent duplicate ingestion of already-processed CSV files
+  - DynamoDB-based state tracking (table: `alur-ingestion-state`)
+  - Each file tracked by ingestion key (table name) + file path (S3 path)
+  - Stores metadata: file size, S3 ETag, rows ingested, timestamp
+  - Automatically skips already-processed files on pipeline re-runs
+  - Enabled by default via `enable_idempotency=True` parameter
+  - Safe for scheduled/automated pipelines
+  - Minimal overhead (~100ms per pipeline run)
+  - Cost: ~$0.03/month for 1000 files/day
+
+- **Multi-Source CSV Ingestion** - Ingest from multiple S3 locations in a single pipeline
+  - `source_path` parameter now accepts list of paths: `["s3://bucket1/*.csv", "s3://bucket2/*.csv"]`
+  - All sources processed and tracked independently
+  - Useful for backfills, archive ingestion, and multi-location data
+
+- **State Management Methods in AWSAdapter**
+  - `is_file_processed()` - Check if a file was already processed
+  - `mark_file_processed()` - Mark file as successfully processed with metadata
+  - `get_processed_files()` - Get all processed files for a table
+
+### Changed
+- **Default State Table Name** - Changed from `alur-state` to `alur-ingestion-state` for clarity
+- **Parameter Naming** - Replaced `check_duplicates` with `enable_idempotency` in `load_to_bronze()` (more accurate name)
+
+### Documentation
+- Added comprehensive testing guide: `test_idempotency.md`
+- Updated template pipeline to show idempotency and multi-source examples
+- Covers usage, testing scenarios, troubleshooting, and best practices
+
 ## [0.5.0] - 2026-01-22
 
 ### Added
