@@ -2,7 +2,7 @@
 
 **A production-ready Python framework for building cost-effective data lake pipelines with Apache Spark on AWS.**
 
-[![Version](https://img.shields.io/badge/version-0.7.3-blue.svg)](https://github.com/ParmenidesSartre/Alur/releases)
+[![Version](https://img.shields.io/badge/version-0.7.4-blue.svg)](https://github.com/ParmenidesSartre/Alur/releases)
 [![Python](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](https://github.com/ParmenidesSartre/Alur/blob/main/LICENSE)
 [![PyPI](https://img.shields.io/pypi/v/alur-framework.svg)](https://pypi.org/project/alur-framework/)

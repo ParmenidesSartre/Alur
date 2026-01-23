@@ -565,7 +565,9 @@ resource "aws_iam_role_policy" "eventbridge_glue_policy" {
 
         # Generate EventBridge rule and target for each scheduled pipeline
         for pipeline_name, sched in sorted(schedules.items()):
-            rule_name = f"alur-{pipeline_name}-{self.env}"
+            # Get environment from config or use generic name
+            env = getattr(self.config, 'ENVIRONMENT', 'dev') if self.config else 'dev'
+            rule_name = f"alur-{pipeline_name}-{env}"
             rule_name_tf = rule_name.replace('-', '_')
 
             # EventBridge Rule
