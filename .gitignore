@@ -59,3 +59,12 @@ spark-warehouse/
 Thumbs.db
 .claude/
 *.parquet
+
+# PyPI publishing
+.pypirc
+dist/
+build/
+
+# Temporary test files
+test_env/
+test_release/
