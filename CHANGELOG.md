@@ -5,6 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-01-23
+
+### Added
+- **Pipeline Scheduling** - Automated cron-based scheduling via @schedule decorator
+  - AWS EventBridge integration for reliable, serverless scheduling
+  - Support for all pipeline layers (Bronze, Silver, Gold)
+  - Cron expressions using EventBridge 6-field format
+  - Auto-generated EventBridge rules and IAM roles via Terraform
+  - Enable/disable schedules without removing decorators
+  - `alur schedules` CLI command to list all schedules
+  - Comprehensive documentation in `docs/SCHEDULING.md`
+  - Example patterns: daily, hourly, weekly, monthly schedules
+  - Minimal cost overhead (~$0.00 for typical usage)
+
+- **New Module: `alur.scheduling`**
+  - `@schedule` decorator for pipeline scheduling
+  - `ScheduleRegistry` for managing pipeline schedules
+  - Cron expression validation (EventBridge format)
+  - Dual-storage pattern (registry + function attribute)
+
+- **Terraform EventBridge Generation**
+  - Auto-generates EventBridge rules for scheduled pipelines
+  - Auto-generates EventBridge targets pointing to Glue jobs
+  - Auto-generates IAM role for EventBridge→Glue permissions
+  - Replaces previous stub in `eventbridge.tf`
+
+### Changed
+- **CLI Enhancement** - Added `alur schedules` command to list all scheduled pipelines
+- **Terraform Generator** - EventBridge infrastructure now fully generated from code
+
+### Documentation
+- Added comprehensive scheduling guide: `docs/SCHEDULING.md`
+- Updated README with scheduling in Key Features
+- Moved scheduling from roadmap to implemented features
+- Covers usage, cron format, common patterns, best practices, troubleshooting
+
+### Technical Details
+- EventBridge rules automatically deployed during `alur deploy`
+- Schedules persisted in ScheduleRegistry (similar to PipelineRegistry)
+- Cron validation enforces EventBridge 6-field format
+- One schedule per pipeline (prevents configuration conflicts)
+- Free tier: 100 EventBridge rules/month, $1/million invocations
+
 ## [0.6.0] - 2026-01-22
 
 ### Added

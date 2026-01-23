@@ -509,7 +509,92 @@ resource "aws_glue_job" "{pipeline_name}_job" {{
 
     def generate_eventbridge_tf(self) -> str:
         """Generate EventBridge rules for scheduled pipelines."""
-        return "# Scheduling disabled (batch-only mode)\n"
+        from alur.scheduling import ScheduleRegistry
+
+        schedules = ScheduleRegistry.get_enabled()
+
+        if not schedules:
+            return "# No scheduled pipelines configured\n"
+
+        tf_content = []
+        tf_content.append("# EventBridge Rules for Scheduled Pipelines")
+        tf_content.append("# Auto-generated from @schedule decorators\n")
+
+        # Generate IAM role for EventBridge to invoke Glue jobs
+        tf_content.append('''
+resource "aws_iam_role" "eventbridge_glue_role" {
+  name = "alur-eventbridge-glue-${var.environment}"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "events.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = {
+    ManagedBy   = "alur"
+    Environment = var.environment
+  }
+}
+
+resource "aws_iam_role_policy" "eventbridge_glue_policy" {
+  name = "alur-eventbridge-glue-policy"
+  role = aws_iam_role.eventbridge_glue_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "glue:StartJobRun"
+        ]
+        Resource = "arn:aws:glue:${var.aws_region}:${var.aws_account_id}:job/alur-*"
+      }
+    ]
+  })
+}
+''')
+
+        # Generate EventBridge rule and target for each scheduled pipeline
+        for pipeline_name, sched in sorted(schedules.items()):
+            rule_name = f"alur-{pipeline_name}-{self.env}"
+            rule_name_tf = rule_name.replace('-', '_')
+
+            # EventBridge Rule
+            tf_content.append(f'''
+resource "aws_cloudwatch_event_rule" "{rule_name_tf}" {{
+  name                = "{rule_name}"
+  description         = "{sched.description}"
+  schedule_expression = "cron({sched.cron})"
+  state               = "ENABLED"
+
+  tags = {{
+    ManagedBy   = "alur"
+    Environment = var.environment
+    Pipeline    = "{pipeline_name}"
+  }}
+}}
+''')
+
+            # EventBridge Target
+            tf_content.append(f'''
+resource "aws_cloudwatch_event_target" "{rule_name_tf}_target" {{
+  rule      = aws_cloudwatch_event_rule.{rule_name_tf}.name
+  target_id = "{pipeline_name}"
+  arn       = aws_glue_job.alur_{pipeline_name}.arn
+  role_arn  = aws_iam_role.eventbridge_glue_role.arn
+}}
+''')
+
+        return '\n'.join(tf_content)
 
     def generate_all(self, output_dir: Path):
         """Generate all Terraform files."""
@@ -518,7 +603,9 @@ resource "aws_glue_job" "{pipeline_name}_job" {{
 
         # Clear registries from previous runs
         from alur.decorators import PipelineRegistry
+        from alur.scheduling import ScheduleRegistry
         PipelineRegistry.clear()
+        ScheduleRegistry.clear()
 
         # Load configuration
         self.load_config()

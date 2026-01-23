@@ -39,6 +39,8 @@ from .core import (
 
 from .decorators import pipeline, PipelineRegistry
 
+from .scheduling import schedule, ScheduleRegistry
+
 from .engine import (
     AWSAdapter,
     PipelineRunner,
@@ -75,7 +77,7 @@ from .batch_ingestion import (
     validate_csv_bytes,
 )
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 
 __all__ = [
     # Table classes
@@ -95,6 +97,9 @@ __all__ = [
     # Decorators
     "pipeline",
     "PipelineRegistry",
+    # Scheduling
+    "schedule",
+    "ScheduleRegistry",
     # Quality
     "expect",
     "QualityRegistry",

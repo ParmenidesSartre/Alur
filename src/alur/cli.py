@@ -1358,5 +1358,68 @@ def list(verbose: bool):
     click.echo("\n")
 
 
+@main.command()
+@click.option("--enabled-only", is_flag=True, help="Show only enabled schedules")
+def schedules(enabled_only: bool):
+    """
+    List all scheduled pipelines.
+
+    Example:
+        alur schedules
+        alur schedules --enabled-only
+    """
+    from alur.scheduling import ScheduleRegistry
+
+    # Import pipelines to trigger registration
+    try:
+        import pipelines
+    except ImportError as e:
+        click.echo(f"[ERROR] Failed to import pipelines: {str(e)}", err=True)
+        return 1
+
+    # Get schedules
+    all_schedules = ScheduleRegistry.get_enabled() if enabled_only else ScheduleRegistry.get_all()
+
+    # Display results
+    click.echo("=" * 80)
+    click.echo("SCHEDULED PIPELINES")
+    click.echo("=" * 80)
+
+    if not all_schedules:
+        status_msg = "enabled" if enabled_only else "registered"
+        click.echo(f"\nNo {status_msg} schedules found.")
+        click.echo("\nAdd scheduling to a pipeline with the @schedule decorator:")
+        click.echo("    @schedule(cron='0 2 * * ? *', description='Daily at 2 AM')")
+        click.echo("    @pipeline(sources={}, target=MyTable)")
+        click.echo("    def my_pipeline():")
+        click.echo("        ...")
+        click.echo("")
+        return
+
+    # Table header
+    click.echo(f"\n{'Pipeline':<30} {'Schedule':<25} {'Status':<10} {'Description'}")
+    click.echo("-" * 80)
+
+    # Table rows
+    for pipeline_name, sched in sorted(all_schedules.items()):
+        status = "✓ Enabled" if sched.enabled else "✗ Disabled"
+        description = sched.description or "-"
+
+        # Truncate description if too long
+        if len(description) > 30:
+            description = description[:27] + "..."
+
+        click.echo(f"{pipeline_name:<30} {sched.cron:<25} {status:<10} {description}")
+
+    # Summary
+    click.echo("")
+    total = len(ScheduleRegistry.get_all())
+    enabled = len(ScheduleRegistry.get_enabled())
+    disabled = total - enabled
+
+    click.echo(f"Total: {total} schedule(s) | Enabled: {enabled} | Disabled: {disabled}")
+    click.echo("")
+
+
 if __name__ == "__main__":
     main()

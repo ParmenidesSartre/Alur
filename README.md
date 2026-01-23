@@ -33,6 +33,7 @@ This framework demonstrates that modern data lake architectures can be both powe
 - **File-Level Idempotency** - DynamoDB-based state tracking prevents duplicate ingestion and saves costs
 - **Multi-Source CSV Ingestion** - Ingest from multiple S3 locations in a single pipeline with independent tracking
 - **Pipeline Orchestration** - Automatic dependency resolution with DAG-based execution
+- **Automated Scheduling** - Cron-based pipeline scheduling via @schedule decorator with AWS EventBridge
 - **Data Quality Validation** - Built-in quality checks with declarative expectations
 - **AWS-Native Deployment** - One-command deployment with auto-generated Terraform infrastructure
 - **Automatic Partition Registration** - Data immediately queryable in Athena after writes
@@ -401,7 +402,7 @@ mypy src/alur
 
 ## Project Status
 
-**Current Version:** 0.6.0 (Released 2026-01-22)
+**Current Version:** 0.7.0 (Released 2026-01-23)
 
 ### Implemented Features
 
@@ -417,10 +418,15 @@ mypy src/alur
   - Automatic metadata columns (_ingested_at, _source_system, _source_file)
   - Built-in logging and metrics
 - Data quality checks via @expect decorator
+- Automated scheduling via @schedule decorator:
+  - AWS EventBridge cron-based scheduling
+  - Auto-generated EventBridge rules and IAM roles
+  - Support for all pipeline layers (Bronze, Silver, Gold)
+  - CLI command to list schedules
 - Automatic partition registration in Glue Catalog
-- Comprehensive CLI (init, run, deploy, logs, validate, list, destroy)
+- Comprehensive CLI (init, run, deploy, logs, validate, list, destroy, schedules)
 - AWSAdapter with AWS Glue integration
-- Auto-generated Terraform infrastructure (S3, Glue, DynamoDB, IAM)
+- Auto-generated Terraform infrastructure (S3, Glue, DynamoDB, IAM, EventBridge)
 - One-command deployment workflow
 - Pre-deployment validation and error checking
 
@@ -428,7 +434,6 @@ mypy src/alur
 
 🔜 **Near-Term**
 - Silver/Gold layers with Apache Iceberg support
-- EventBridge scheduling via @schedule decorator
 - Batch DynamoDB operations for better idempotency performance
 - File version detection using S3 ETag comparison
 
