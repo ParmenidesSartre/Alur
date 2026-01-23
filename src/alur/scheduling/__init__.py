@@ -1,6 +1,6 @@
 """
 Pipeline Scheduling for Alur Framework.
-Enable cron-based scheduling via AWS EventBridge.
+Enable cron-based scheduling via Glue SCHEDULED triggers.
 """
 
 from typing import Callable, Optional, Dict
@@ -86,18 +86,18 @@ def schedule(
     """
     Decorator to schedule a pipeline for automatic execution.
 
-    Generates AWS EventBridge rules during Terraform deployment.
+    Generates Glue SCHEDULED triggers during Terraform deployment.
     Must be applied BEFORE @pipeline decorator.
 
     Args:
-        cron: AWS EventBridge cron expression (6 fields)
+        cron: AWS Glue cron expression (6 fields)
               Format: "minute hour day-of-month month day-of-week year"
               Examples:
                 - "0 2 * * ? *" - Daily at 2 AM UTC
                 - "0 */4 * * ? *" - Every 4 hours
                 - "0 9 ? * MON-FRI *" - Weekdays at 9 AM
         enabled: Whether schedule is active (default: True)
-        timezone: Timezone for documentation purposes (EventBridge uses UTC)
+        timezone: Timezone for documentation purposes (Glue triggers use UTC)
         description: Human-readable description of the schedule
         max_concurrent_runs: Maximum concurrent executions (default: 1)
 
@@ -108,7 +108,7 @@ def schedule(
             return load_to_bronze(...)
 
     Note:
-        AWS EventBridge uses 6-field cron format, different from Unix cron (5 fields).
+        AWS Glue uses 6-field cron format, same as EventBridge, different from Unix cron (5 fields).
         Use '?' for either day-of-month or day-of-week (not both).
     """
     from alur.scheduling.validators import validate_cron_expression

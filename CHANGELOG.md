@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.7.5] - 2026-01-23
 
+### Changed
+- **Simplified Scheduler Architecture** - Replaced EventBridge-based scheduling with Glue native SCHEDULED triggers
+  - Reduced from 4 AWS resources per pipeline to 1 (simpler, more maintainable)
+  - Removed EventBridge rules, targets, workflows, and EVENT triggers
+  - Now uses single SCHEDULED Glue trigger per pipeline
+  - No changes to `@schedule` decorator API (drop-in replacement)
+  - Aligns better with "accessible technology" thesis goal
+  - Terraform file renamed: `eventbridge.tf` → `schedules.tf`
+
 ### Fixed
 - **Critical EventBridge Scheduler Deployment Failures** - Multiple fixes for `@schedule` decorator AWS deployment
   - Fixed undefined Terraform variables (`var.environment`, `var.aws_region`, `var.aws_account_id`)
@@ -18,7 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - EventBridge now targets workflow ARN instead of job ARN
   - Updated IAM permissions from `glue:StartJobRun` to `glue:notifyEvent` for workflows
   - Tested successfully with end-to-end AWS deployment in ap-southeast-5
-  - Scheduler feature is now fully functional in production
+  - **NOTE**: This complex EventBridge architecture was later replaced with simpler Glue SCHEDULED triggers (see Changed section above)
 ## [0.7.4] - 2026-01-23
 
 ### Fixed
