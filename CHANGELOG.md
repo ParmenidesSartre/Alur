@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.1] - 2026-01-23
+
+### Changed
+- Improved `.gitignore` to exclude PyPI publishing artifacts and temporary test files
+- Added automated release workflow documentation and scripts
+
+### Documentation
+- Added `PUBLISHING.md` - Complete PyPI publishing guide
+- Added `RELEASE_WORKFLOW.md` - Step-by-step release instructions
+- Added `scripts/release.sh` and `scripts/release.bat` - Automated release scripts
+- Added `docs/index.md` - Documentation homepage for GitHub Pages
+- Added GitHub Actions workflows for automated PyPI publishing
+
 ## [0.7.0] - 2026-01-23
 
 ### Added
