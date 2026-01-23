@@ -516,59 +516,97 @@ resource "aws_glue_job" "{pipeline_name}_job" {{
         if not schedules:
             return "# No scheduled pipelines configured\n"
 
+        # Get configuration values
+        env = getattr(self.config, "ENVIRONMENT", "dev")
+        aws_region = getattr(self.config, "AWS_REGION", "us-east-1")
+        aws_account_id = getattr(self.config, "AWS_ACCOUNT_ID", "")
+
         tf_content = []
         tf_content.append("# EventBridge Rules for Scheduled Pipelines")
         tf_content.append("# Auto-generated from @schedule decorators\n")
 
         # Generate IAM role for EventBridge to invoke Glue jobs
-        tf_content.append('''
-resource "aws_iam_role" "eventbridge_glue_role" {
-  name = "alur-eventbridge-glue-${var.environment}"
+        tf_content.append(f'''
+resource "aws_iam_role" "eventbridge_glue_role" {{
+  name = "alur-eventbridge-glue-{env}"
 
-  assume_role_policy = jsonencode({
+  assume_role_policy = jsonencode({{
     Version = "2012-10-17"
     Statement = [
-      {
+      {{
         Action = "sts:AssumeRole"
         Effect = "Allow"
-        Principal = {
+        Principal = {{
           Service = "events.amazonaws.com"
-        }
-      }
+        }}
+      }}
     ]
-  })
+  }})
 
-  tags = {
+  tags = {{
     ManagedBy   = "alur"
-    Environment = var.environment
-  }
-}
+    Environment = "{env}"
+  }}
+}}
 
-resource "aws_iam_role_policy" "eventbridge_glue_policy" {
+resource "aws_iam_role_policy" "eventbridge_glue_policy" {{
   name = "alur-eventbridge-glue-policy"
   role = aws_iam_role.eventbridge_glue_role.id
 
-  policy = jsonencode({
+  policy = jsonencode({{
     Version = "2012-10-17"
     Statement = [
-      {
+      {{
         Effect = "Allow"
         Action = [
-          "glue:StartJobRun"
+          "glue:notifyEvent"
         ]
-        Resource = "arn:aws:glue:${var.aws_region}:${var.aws_account_id}:job/alur-*"
-      }
+        Resource = "arn:aws:glue:{aws_region}:{aws_account_id}:workflow/alur-*"
+      }}
     ]
-  })
-}
+  }})
+}}
 ''')
 
-        # Generate EventBridge rule and target for each scheduled pipeline
+        # Generate Glue workflow, trigger, EventBridge rule and target for each scheduled pipeline
         for pipeline_name, sched in sorted(schedules.items()):
-            # Get environment from config or use generic name
-            env = getattr(self.config, 'ENVIRONMENT', 'dev') if self.config else 'dev'
             rule_name = f"alur-{pipeline_name}-{env}"
             rule_name_tf = rule_name.replace('-', '_')
+            workflow_name = f"alur-{pipeline_name}-workflow-{env}"
+            workflow_name_tf = workflow_name.replace('-', '_')
+
+            # Glue Workflow - required for EventBridge integration
+            tf_content.append(f'''
+resource "aws_glue_workflow" "{workflow_name_tf}" {{
+  name        = "{workflow_name}"
+  description = "Workflow for scheduled pipeline: {pipeline_name}"
+
+  tags = {{
+    ManagedBy   = "alur"
+    Environment = "{env}"
+    Pipeline    = "{pipeline_name}"
+  }}
+}}
+''')
+
+            # Glue Trigger - EVENT type connects workflow to job
+            tf_content.append(f'''
+resource "aws_glue_trigger" "{workflow_name_tf}_trigger" {{
+  name          = "{workflow_name}-trigger"
+  workflow_name = aws_glue_workflow.{workflow_name_tf}.name
+  type          = "EVENT"
+
+  actions {{
+    job_name = aws_glue_job.{pipeline_name}_job.name
+  }}
+
+  tags = {{
+    ManagedBy   = "alur"
+    Environment = "{env}"
+    Pipeline    = "{pipeline_name}"
+  }}
+}}
+''')
 
             # EventBridge Rule
             tf_content.append(f'''
@@ -580,18 +618,18 @@ resource "aws_cloudwatch_event_rule" "{rule_name_tf}" {{
 
   tags = {{
     ManagedBy   = "alur"
-    Environment = var.environment
+    Environment = "{env}"
     Pipeline    = "{pipeline_name}"
   }}
 }}
 ''')
 
-            # EventBridge Target
+            # EventBridge Target - points to workflow, not job
             tf_content.append(f'''
 resource "aws_cloudwatch_event_target" "{rule_name_tf}_target" {{
   rule      = aws_cloudwatch_event_rule.{rule_name_tf}.name
   target_id = "{pipeline_name}"
-  arn       = aws_glue_job.alur_{pipeline_name}.arn
+  arn       = aws_glue_workflow.{workflow_name_tf}.arn
   role_arn  = aws_iam_role.eventbridge_glue_role.arn
 }}
 ''')
