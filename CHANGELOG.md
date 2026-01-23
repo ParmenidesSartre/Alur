@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.2] - 2026-01-23
+
+### Added
+- **Automated Version Bumping** - Smart version management across all project files
+  - `scripts/bump_version.py` - Intelligently updates version numbers everywhere
+  - Updates: pyproject.toml, __init__.py, README.md, docs/index.md, CHANGELOG.md
+  - Validates semantic versioning format (MAJOR.MINOR.PATCH)
+  - Dry-run mode to preview changes before applying
+  - Auto-generates CHANGELOG entry templates
+  - Cross-platform support (Windows, Linux, macOS)
+
+### Changed
+- **Release Scripts** - Updated to use bump_version.py for reliability
+  - `scripts/release.bat` - Windows automated release now uses version bumper
+  - `scripts/release.sh` - Linux/Mac release script improved
+  - No more missed version updates in documentation files
+  - Consistent version numbering across all files
+
+### Documentation
+- Added `scripts/README.md` - Complete guide for release automation tools
+  - Usage examples and best practices
+  - Troubleshooting guide
+  - CI/CD integration instructions
 ## [0.7.1] - 2026-01-23
 
 ### Changed
