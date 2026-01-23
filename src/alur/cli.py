@@ -1402,7 +1402,7 @@ def schedules(enabled_only: bool):
 
     # Table rows
     for pipeline_name, sched in sorted(all_schedules.items()):
-        status = "✓ Enabled" if sched.enabled else "✗ Disabled"
+        status = "Enabled" if sched.enabled else "Disabled"
         description = sched.description or "-"
 
         # Truncate description if too long
