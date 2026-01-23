@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+    <url>
+         <loc>https://parmenidessartre.github.io/Alur/</loc>
+         <lastmod>2026-01-23</lastmod>
+    </url>
+    <url>
+         <loc>https://parmenidessartre.github.io/Alur/AWS_DEPLOYMENT_GUIDE/</loc>
+         <lastmod>2026-01-23</lastmod>
+    </url>
+    <url>
+         <loc>https://parmenidessartre.github.io/Alur/BRONZE_INGESTION/</loc>
+         <lastmod>2026-01-23</lastmod>
+    </url>
+    <url>
+         <loc>https://parmenidessartre.github.io/Alur/DATA_QUALITY/</loc>
+         <lastmod>2026-01-23</lastmod>
+    </url>
+    <url>
+         <loc>https://parmenidessartre.github.io/Alur/DEPLOY/</loc>
+         <lastmod>2026-01-23</lastmod>
+    </url>
+    <url>
+         <loc>https://parmenidessartre.github.io/Alur/SCHEDULING/</loc>
+         <lastmod>2026-01-23</lastmod>
+    </url>
+</urlset>
