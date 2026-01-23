@@ -6,8 +6,8 @@
 |----------|-------------|
 | [DEPLOY.md](DEPLOY.md) | Deployment commands and options |
 | [AWS_DEPLOYMENT_GUIDE.md](AWS_DEPLOYMENT_GUIDE.md) | How code runs in AWS Glue |
-| [LOCAL_TESTING.md](LOCAL_TESTING.md) | Local development and testing |
 | [BRONZE_INGESTION.md](BRONZE_INGESTION.md) | Bronze layer ingestion helpers |
+| [SCHEDULING.md](SCHEDULING.md) | Pipeline scheduling with @schedule decorator |
 | [DATA_QUALITY.md](DATA_QUALITY.md) | Data quality checks with @expect |
 
 ## Quick Links
@@ -43,8 +43,8 @@
 ┌─────────────────────────────────────────────────────────────┐
 │                        AWS                                  │
 ├─────────────┬─────────────┬─────────────┬──────────────────┤
-│     S3      │  AWS Glue   │  DynamoDB   │   EventBridge    │
-│  (Storage)  │   (Spark)   │   (State)   │   (Scheduling)   │
+│     S3      │  AWS Glue   │  DynamoDB   │  Glue SCHEDULED  │
+│  (Storage)  │   (Spark)   │   (State)   │    (Triggers)    │
 └─────────────┴─────────────┴─────────────┴──────────────────┘
 ```
 

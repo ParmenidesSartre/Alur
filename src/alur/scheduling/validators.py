@@ -56,13 +56,13 @@ def validate_cron_expression(cron: str) -> None:
     _validate_field(day_of_week, "day-of-week", 1, 7, allow_names=True, allow_question=True)
     _validate_field(year, "year", 1970, 2199)
 
-    # EventBridge requires '?' in either day-of-month OR day-of-week (not both)
+    # Glue triggers require '?' in either day-of-month OR day-of-week (not both)
     has_question_dom = '?' in day_of_month
     has_question_dow = '?' in day_of_week
 
     if not (has_question_dom or has_question_dow):
         raise ValueError(
-            "EventBridge requires '?' in either day-of-month or day-of-week. "
+            "Glue SCHEDULED triggers require '?' in either day-of-month or day-of-week. "
             "Use '?' to indicate 'no specific value'. "
             f"Example: '0 2 ? * MON *' or '0 2 1 * ? *'"
         )
@@ -143,7 +143,7 @@ def _validate_field(
             )
         return
 
-    # If we get here, format is unrecognized (but might still be valid EventBridge syntax)
+    # If we get here, format is unrecognized (but might still be valid Glue cron syntax)
     # We allow it through to avoid being overly restrictive
     pass
 

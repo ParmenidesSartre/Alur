@@ -107,7 +107,7 @@ def schedule(
             return load_to_bronze(...)
 
     Note:
-        AWS Glue uses 6-field cron format, same as EventBridge, different from Unix cron (5 fields).
+        AWS Glue uses 6-field cron format, different from Unix cron (5 fields).
         Use '?' for either day-of-month or day-of-week (not both).
     """
     from alur.scheduling.validators import validate_cron_expression
