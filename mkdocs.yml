@@ -1,0 +1,98 @@
+# MkDocs Configuration for Alur Framework Documentation
+
+site_name: Alur Framework
+site_description: Cost-effective data lake framework for small and mid-size companies
+site_author: Alur Framework Contributors
+site_url: https://parmenidessartre.github.io/Alur/
+
+repo_name: ParmenidesSartre/Alur
+repo_url: https://github.com/ParmenidesSartre/Alur
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    # Light mode
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    # Dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+  icon:
+    repo: fontawesome/brands/github
+
+extra:
+  version:
+    provider: mike
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/ParmenidesSartre/Alur
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/alur-framework/
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: google
+            show_source: true
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.details
+  - admonition
+  - tables
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Installation: getting-started/installation.md
+      - Quick Start: getting-started/quickstart.md
+      - Core Concepts: getting-started/concepts.md
+  - User Guide:
+      - Table Definitions: user-guide/tables.md
+      - Pipelines: user-guide/pipelines.md
+      - Bronze Ingestion: user-guide/bronze-ingestion.md
+      - Scheduling: user-guide/scheduling.md
+      - Data Quality: user-guide/data-quality.md
+      - Deployment: user-guide/deployment.md
+  - CLI Reference:
+      - Commands: cli/commands.md
+      - Configuration: cli/configuration.md
+  - API Reference:
+      - Core: api/core.md
+      - Decorators: api/decorators.md
+      - Scheduling: api/scheduling.md
+      - Quality: api/quality.md
+      - Ingestion: api/ingestion.md
+  - Development:
+      - Contributing: CONTRIBUTING.md
+      - Changelog: CHANGELOG.md
+      - Publishing: PUBLISHING.md

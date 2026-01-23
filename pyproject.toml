@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "alur-framework"
-version = "0.6.0"
+version = "0.7.0"
 description = "Cost-effective data lake framework designed for small and mid-size companies. Build production-grade data pipelines on AWS with zero idle costs using serverless Spark and automatic partition management."
 readme = "README.md"
 requires-python = ">=3.8"
