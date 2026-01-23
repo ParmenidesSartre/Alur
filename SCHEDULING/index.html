@@ -1645,10 +1645,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#2-eventbridge-uses-utc-only" class="md-nav__link">
+  <a href="#2-glue-uses-utc-only" class="md-nav__link">
     <span class="md-ellipsis">
       
-        2. EventBridge Uses UTC Only
+        2. Glue Uses UTC Only
       
     </span>
   </a>
@@ -1764,7 +1764,7 @@
 
 
 <h1 id="pipeline-scheduling">Pipeline Scheduling<a class="headerlink" href="#pipeline-scheduling" title="Permanent link">&para;</a></h1>
-<p>Alur supports automatic pipeline scheduling via AWS EventBridge. Use the <code>@schedule</code> decorator to configure cron-based execution for your pipelines.</p>
+<p>Alur supports automatic pipeline scheduling via AWS Glue SCHEDULED triggers. Use the <code>@schedule</code> decorator to configure cron-based execution for your pipelines.</p>
 <h2 id="table-of-contents">Table of Contents<a class="headerlink" href="#table-of-contents" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="#quick-start">Quick Start</a></li>
@@ -1796,9 +1796,9 @@
 <p>Configure automatic pipeline execution.</p>
 <p><strong>Parameters:</strong></p>
 <ul>
-<li><code>cron</code> (str, required): AWS EventBridge cron expression (6 fields)</li>
+<li><code>cron</code> (str, required): AWS Glue cron expression (6 fields)</li>
 <li><code>enabled</code> (bool, default=True): Whether schedule is active</li>
-<li><code>timezone</code> (str, default="UTC"): Timezone for documentation (EventBridge uses UTC)</li>
+<li><code>timezone</code> (str, default="UTC"): Timezone for documentation (Glue triggers use UTC)</li>
 <li><code>description</code> (str, optional): Human-readable description</li>
 <li><code>max_concurrent_runs</code> (int, default=1): Maximum concurrent executions</li>
 </ul>
@@ -1814,7 +1814,7 @@
 <a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>    <span class="k">pass</span>
 </code></pre></div>
 <h2 id="cron-format-reference">Cron Format Reference<a class="headerlink" href="#cron-format-reference" title="Permanent link">&para;</a></h2>
-<p>AWS EventBridge uses <strong>6-field cron format</strong>, different from Unix cron (5 fields).</p>
+<p>AWS Glue SCHEDULED triggers use <strong>6-field cron format</strong>, different from Unix cron (5 fields).</p>
 <h3 id="format">Format<a class="headerlink" href="#format" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>cron(minute hour day-of-month month day-of-week year)
 </code></pre></div>
@@ -1928,22 +1928,20 @@
 <a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="n">cron</span><span class="o">=</span><span class="s2">&quot;0 10 ? * MON#1 *&quot;</span>
 </code></pre></div>
 <h2 id="deployment">Deployment<a class="headerlink" href="#deployment" title="Permanent link">&para;</a></h2>
-<p>Schedules are automatically deployed as AWS EventBridge rules during deployment.</p>
+<p>Schedules are automatically deployed as AWS Glue SCHEDULED triggers during deployment.</p>
 <h3 id="deploy-with-schedules">Deploy with Schedules<a class="headerlink" href="#deploy-with-schedules" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="c1"># Deploy infrastructure with schedules</span>
 <a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>alur<span class="w"> </span>deploy<span class="w"> </span>--env<span class="w"> </span>production
 <a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>
-<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="c1"># Verify EventBridge rules created</span>
-<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>aws<span class="w"> </span>events<span class="w"> </span>list-rules<span class="w"> </span>--name-prefix<span class="w"> </span>alur-
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="c1"># Verify Glue SCHEDULED triggers created</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>aws<span class="w"> </span>glue<span class="w"> </span>list-triggers<span class="w"> </span>--max-results<span class="w"> </span><span class="m">20</span>
 </code></pre></div>
 <h3 id="generated-infrastructure">Generated Infrastructure<a class="headerlink" href="#generated-infrastructure" title="Permanent link">&para;</a></h3>
 <p>The <code>@schedule</code> decorator automatically generates:</p>
 <ol>
-<li><strong>EventBridge Rule</strong> - Cron-based trigger</li>
-<li><strong>EventBridge Target</strong> - Points to Glue job</li>
-<li><strong>IAM Role</strong> - Allows EventBridge to invoke Glue jobs</li>
+<li><strong>Glue SCHEDULED Trigger</strong> - Cron-based trigger that invokes the Glue job</li>
 </ol>
-<p>All Terraform code is auto-generated in <code>terraform/eventbridge.tf</code>.</p>
+<p>All Terraform code is auto-generated in <code>terraform/schedules.tf</code>.</p>
 <h2 id="managing-schedules">Managing Schedules<a class="headerlink" href="#managing-schedules" title="Permanent link">&para;</a></h2>
 <h3 id="list-schedules">List Schedules<a class="headerlink" href="#list-schedules" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="c1"># List all schedules</span>
@@ -1976,7 +1974,7 @@
 <a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a><span class="k">def</span><span class="w"> </span><span class="nf">ingest_orders</span><span class="p">():</span>
 <a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a>    <span class="k">pass</span>
 </code></pre></div>
-<p>Redeploy to remove the EventBridge rule:</p>
+<p>Redeploy to remove the Glue SCHEDULED trigger:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>alur<span class="w"> </span>deploy<span class="w"> </span>--env<span class="w"> </span>production
 </code></pre></div>
 <h3 id="remove-a-schedule">Remove a Schedule<a class="headerlink" href="#remove-a-schedule" title="Permanent link">&para;</a></h3>
@@ -2016,7 +2014,7 @@
 <a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a>    <span class="k">pass</span>
 </code></pre></div>
 <h3 id="3-use-utc-for-consistency">3. Use UTC for Consistency<a class="headerlink" href="#3-use-utc-for-consistency" title="Permanent link">&para;</a></h3>
-<p>EventBridge always uses UTC internally. Avoid timezone confusion by thinking in UTC:</p>
+<p>Glue always uses UTC internally. Avoid timezone confusion by thinking in UTC:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="c1"># Good - Explicit UTC time</span>
 <a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a><span class="nd">@schedule</span><span class="p">(</span>
 <a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a>    <span class="n">cron</span><span class="o">=</span><span class="s2">&quot;0 14 * * ? *&quot;</span><span class="p">,</span>  <span class="c1"># 2 PM UTC</span>
@@ -2026,7 +2024,7 @@
 <a id="__codelineno-17-7" name="__codelineno-17-7" href="#__codelineno-17-7"></a><span class="c1"># Confusing - Timezone parameter is for documentation only</span>
 <a id="__codelineno-17-8" name="__codelineno-17-8" href="#__codelineno-17-8"></a><span class="nd">@schedule</span><span class="p">(</span>
 <a id="__codelineno-17-9" name="__codelineno-17-9" href="#__codelineno-17-9"></a>    <span class="n">cron</span><span class="o">=</span><span class="s2">&quot;0 14 * * ? *&quot;</span><span class="p">,</span>
-<a id="__codelineno-17-10" name="__codelineno-17-10" href="#__codelineno-17-10"></a>    <span class="n">timezone</span><span class="o">=</span><span class="s2">&quot;America/New_York&quot;</span><span class="p">,</span>  <span class="c1"># Misleading - EventBridge still uses UTC!</span>
+<a id="__codelineno-17-10" name="__codelineno-17-10" href="#__codelineno-17-10"></a>    <span class="n">timezone</span><span class="o">=</span><span class="s2">&quot;America/New_York&quot;</span><span class="p">,</span>  <span class="c1"># Misleading - Glue still uses UTC!</span>
 <a id="__codelineno-17-11" name="__codelineno-17-11" href="#__codelineno-17-11"></a>    <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Daily ingestion at 9 AM EST&quot;</span>
 <a id="__codelineno-17-12" name="__codelineno-17-12" href="#__codelineno-17-12"></a><span class="p">)</span>
 </code></pre></div>
@@ -2046,8 +2044,8 @@
 <div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="c1"># View Glue job runs</span>
 <a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>aws<span class="w"> </span>glue<span class="w"> </span>get-job-runs<span class="w"> </span>--job-name<span class="w"> </span>alur-ingest_orders-production<span class="w"> </span>--max-results<span class="w"> </span><span class="m">10</span>
 <a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a>
-<a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a><span class="c1"># View EventBridge rule details</span>
-<a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a>aws<span class="w"> </span>events<span class="w"> </span>describe-rule<span class="w"> </span>--name<span class="w"> </span>alur-ingest_orders-production
+<a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a><span class="c1"># View Glue SCHEDULED trigger details</span>
+<a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a>aws<span class="w"> </span>glue<span class="w"> </span>get-trigger<span class="w"> </span>--name<span class="w"> </span>alur-ingest_orders-schedule-production
 </code></pre></div>
 <h3 id="6-use-idempotency">6. Use Idempotency<a class="headerlink" href="#6-use-idempotency" title="Permanent link">&para;</a></h3>
 <p>Ensure your pipelines are idempotent (safe to run multiple times):</p>
@@ -2086,34 +2084,31 @@
 <a id="__codelineno-21-16" name="__codelineno-21-16" href="#__codelineno-21-16"></a><span class="k">def</span><span class="w"> </span><span class="nf">ingest_orders_afternoon</span><span class="p">():</span>
 <a id="__codelineno-21-17" name="__codelineno-21-17" href="#__codelineno-21-17"></a>    <span class="k">return</span> <span class="n">_shared_ingestion_logic</span><span class="p">()</span>
 </code></pre></div>
-<h3 id="2-eventbridge-uses-utc-only">2. EventBridge Uses UTC Only<a class="headerlink" href="#2-eventbridge-uses-utc-only" title="Permanent link">&para;</a></h3>
-<p>All schedules run in UTC. EventBridge does not support timezone-aware scheduling.</p>
+<h3 id="2-glue-uses-utc-only">2. Glue Uses UTC Only<a class="headerlink" href="#2-glue-uses-utc-only" title="Permanent link">&para;</a></h3>
+<p>All schedules run in UTC. Glue does not support timezone-aware scheduling.</p>
 <h3 id="3-minimum-frequency-1-minute">3. Minimum Frequency: 1 Minute<a class="headerlink" href="#3-minimum-frequency-1-minute" title="Permanent link">&para;</a></h3>
-<p>EventBridge has a minimum interval of 1 minute. For sub-minute scheduling, use alternative solutions (Lambda, Kinesis, etc.).</p>
+<p>Glue has a minimum interval of 1 minute. For sub-minute scheduling, use alternative solutions (Lambda, Kinesis, etc.).</p>
 <h3 id="4-execution-not-guaranteed">4. Execution Not Guaranteed<a class="headerlink" href="#4-execution-not-guaranteed" title="Permanent link">&para;</a></h3>
-<p>EventBridge is "at least once" delivery. In rare cases, a schedule may trigger multiple times or not at all. Design pipelines to handle this.</p>
+<p>Glue is "at least once" delivery. In rare cases, a schedule may trigger multiple times or not at all. Design pipelines to handle this.</p>
 <h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">&para;</a></h2>
 <h3 id="schedule-not-triggering">Schedule Not Triggering<a class="headerlink" href="#schedule-not-triggering" title="Permanent link">&para;</a></h3>
 <ol>
 <li>
-<p><strong>Check EventBridge rule status:</strong>
-   <div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>aws<span class="w"> </span>events<span class="w"> </span>describe-rule<span class="w"> </span>--name<span class="w"> </span>alur-ingest_orders-production
+<p><strong>Check Glue SCHEDULED trigger status:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>aws<span class="w"> </span>glue<span class="w"> </span>get-trigger<span class="w"> </span>--name<span class="w"> </span>alur-ingest_orders-schedule-production
 </code></pre></div></p>
 </li>
 <li>
-<p><strong>Verify rule is ENABLED:</strong>
+<p><strong>Verify trigger is ACTIVATED:</strong>
    <div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a><span class="p">{</span>
-<a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a><span class="w">  </span><span class="nt">&quot;State&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ENABLED&quot;</span><span class="p">,</span><span class="w">  </span><span class="c1">// Should be ENABLED</span>
-<a id="__codelineno-23-3" name="__codelineno-23-3" href="#__codelineno-23-3"></a><span class="w">  </span><span class="nt">&quot;ScheduleExpression&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;cron(0 2 * * ? *)&quot;</span>
-<a id="__codelineno-23-4" name="__codelineno-23-4" href="#__codelineno-23-4"></a><span class="p">}</span>
+<a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a><span class="w">  </span><span class="nt">&quot;State&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ACTIVATED&quot;</span><span class="p">,</span><span class="w">  </span><span class="c1">// Should be ACTIVATED</span>
+<a id="__codelineno-23-3" name="__codelineno-23-3" href="#__codelineno-23-3"></a><span class="w">  </span><span class="nt">&quot;Type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;SCHEDULED&quot;</span><span class="p">,</span>
+<a id="__codelineno-23-4" name="__codelineno-23-4" href="#__codelineno-23-4"></a><span class="w">  </span><span class="nt">&quot;Schedule&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;cron(0 2 * * ? *)&quot;</span>
+<a id="__codelineno-23-5" name="__codelineno-23-5" href="#__codelineno-23-5"></a><span class="p">}</span>
 </code></pre></div></p>
 </li>
 <li>
-<p><strong>Check IAM permissions:</strong></p>
-</li>
-<li>EventBridge needs <code>glue:StartJobRun</code> permission</li>
-<li>
-<p>Role: <code>alur-eventbridge-glue-&lt;environment&gt;</code></p>
+<p><strong>Glue triggers don't require additional IAM permissions</strong> - the Glue job role is used automatically</p>
 </li>
 <li>
 <p><strong>Verify Glue job exists:</strong>
@@ -2122,12 +2117,12 @@
 </li>
 </ol>
 <h3 id="invalid-cron-expression">Invalid Cron Expression<a class="headerlink" href="#invalid-cron-expression" title="Permanent link">&para;</a></h3>
-<p><strong>Error:</strong> <code>ValueError: EventBridge cron expression must have 6 fields</code></p>
-<p><strong>Solution:</strong> Use EventBridge format (6 fields), not Unix cron (5 fields):</p>
+<p><strong>Error:</strong> <code>ValueError: Glue cron expression must have 6 fields</code></p>
+<p><strong>Solution:</strong> Use Glue format (6 fields), not Unix cron (5 fields):</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a><span class="c1"># ✗ Unix cron (5 fields)</span>
 <a id="__codelineno-25-2" name="__codelineno-25-2" href="#__codelineno-25-2"></a><span class="nd">@schedule</span><span class="p">(</span><span class="n">cron</span><span class="o">=</span><span class="s2">&quot;0 2 * * *&quot;</span><span class="p">)</span>  <span class="c1"># ERROR</span>
 <a id="__codelineno-25-3" name="__codelineno-25-3" href="#__codelineno-25-3"></a>
-<a id="__codelineno-25-4" name="__codelineno-25-4" href="#__codelineno-25-4"></a><span class="c1"># ✓ EventBridge cron (6 fields)</span>
+<a id="__codelineno-25-4" name="__codelineno-25-4" href="#__codelineno-25-4"></a><span class="c1"># ✓ Glue cron (6 fields)</span>
 <a id="__codelineno-25-5" name="__codelineno-25-5" href="#__codelineno-25-5"></a><span class="nd">@schedule</span><span class="p">(</span><span class="n">cron</span><span class="o">=</span><span class="s2">&quot;0 2 * * ? *&quot;</span><span class="p">)</span>  <span class="c1"># CORRECT</span>
 </code></pre></div>
 <h3 id="duplicate-schedule-error">Duplicate Schedule Error<a class="headerlink" href="#duplicate-schedule-error" title="Permanent link">&para;</a></h3>
@@ -2135,13 +2130,13 @@
 <p><strong>Solution:</strong> Remove duplicate <code>@schedule</code> decorator. Each pipeline can only have one schedule.</p>
 <h2 id="cost-considerations">Cost Considerations<a class="headerlink" href="#cost-considerations" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong>EventBridge Rules:</strong> Free for first 100 rules/month</li>
-<li><strong>EventBridge Invocations:</strong> $1.00 per million invocations</li>
+<li><strong>Glue Rules:</strong> Free for first 100 rules/month</li>
+<li><strong>Glue Invocations:</strong> $1.00 per million invocations</li>
 <li><strong>Glue Job Runs:</strong> Standard Glue pricing (based on DPU-hours)</li>
 </ul>
 <p><strong>Example Cost (Daily Schedule):</strong>
 - 1 pipeline × 1 run/day × 30 days = 30 invocations/month
-- EventBridge cost: 30 / 1,000,000 × $1.00 = $0.00003/month (negligible)
+- Glue cost: 30 / 1,000,000 × $1.00 = $0.00003/month (negligible)
 - Glue cost: Depends on job runtime (unchanged from manual runs)</p>
 <p><strong>Conclusion:</strong> Scheduling adds virtually zero cost overhead. You only pay for Glue execution time.</p>
 
