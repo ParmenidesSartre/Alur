@@ -5,7 +5,6 @@ Enable cron-based scheduling via Glue SCHEDULED triggers.
 
 from typing import Callable, Optional, Dict
 from dataclasses import dataclass
-from functools import wraps
 
 
 @dataclass

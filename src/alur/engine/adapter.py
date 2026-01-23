@@ -457,7 +457,7 @@ Original error: {str(s3_error)}
                     # Refresh table metadata first
                     try:
                         spark.catalog.refreshTable(f"{database}.{table_name}")
-                    except:
+                    except Exception:
                         pass  # Table might not be in cache yet
 
                     # Run MSCK REPAIR TABLE using Spark SQL

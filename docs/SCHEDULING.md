@@ -1,6 +1,6 @@
 # Pipeline Scheduling
 
-Alur supports automatic pipeline scheduling via AWS EventBridge. Use the `@schedule` decorator to configure cron-based execution for your pipelines.
+Alur supports automatic pipeline scheduling via AWS Glue SCHEDULED triggers. Use the `@schedule` decorator to configure cron-based execution for your pipelines.
 
 ## Table of Contents
 
@@ -41,9 +41,9 @@ Configure automatic pipeline execution.
 
 **Parameters:**
 
-- `cron` (str, required): AWS EventBridge cron expression (6 fields)
+- `cron` (str, required): AWS Glue cron expression (6 fields)
 - `enabled` (bool, default=True): Whether schedule is active
-- `timezone` (str, default="UTC"): Timezone for documentation (EventBridge uses UTC)
+- `timezone` (str, default="UTC"): Timezone for documentation (Glue triggers use UTC)
 - `description` (str, optional): Human-readable description
 - `max_concurrent_runs` (int, default=1): Maximum concurrent executions
 
@@ -63,7 +63,7 @@ def ingest_orders():
 
 ## Cron Format Reference
 
-AWS EventBridge uses **6-field cron format**, different from Unix cron (5 fields).
+AWS Glue SCHEDULED triggers use **6-field cron format**, different from Unix cron (5 fields).
 
 ### Format
 
@@ -164,7 +164,7 @@ cron="0 10 ? * MON#1 *"
 
 ## Deployment
 
-Schedules are automatically deployed as AWS EventBridge rules during deployment.
+Schedules are automatically deployed as AWS Glue SCHEDULED triggers during deployment.
 
 ### Deploy with Schedules
 
@@ -172,19 +172,17 @@ Schedules are automatically deployed as AWS EventBridge rules during deployment.
 # Deploy infrastructure with schedules
 alur deploy --env production
 
-# Verify EventBridge rules created
-aws events list-rules --name-prefix alur-
+# Verify Glue SCHEDULED triggers created
+aws glue list-triggers --max-results 20
 ```
 
 ### Generated Infrastructure
 
 The `@schedule` decorator automatically generates:
 
-1. **EventBridge Rule** - Cron-based trigger
-2. **EventBridge Target** - Points to Glue job
-3. **IAM Role** - Allows EventBridge to invoke Glue jobs
+1. **Glue SCHEDULED Trigger** - Cron-based trigger that invokes the Glue job
 
-All Terraform code is auto-generated in `terraform/eventbridge.tf`.
+All Terraform code is auto-generated in `terraform/schedules.tf`.
 
 ## Managing Schedules
 
@@ -229,7 +227,7 @@ def ingest_orders():
     pass
 ```
 
-Redeploy to remove the EventBridge rule:
+Redeploy to remove the Glue SCHEDULED trigger:
 
 ```bash
 alur deploy --env production
@@ -287,7 +285,7 @@ def long_running_pipeline():
 
 ### 3. Use UTC for Consistency
 
-EventBridge always uses UTC internally. Avoid timezone confusion by thinking in UTC:
+Glue always uses UTC internally. Avoid timezone confusion by thinking in UTC:
 
 ```python
 # Good - Explicit UTC time
@@ -299,7 +297,7 @@ EventBridge always uses UTC internally. Avoid timezone confusion by thinking in 
 # Confusing - Timezone parameter is for documentation only
 @schedule(
     cron="0 14 * * ? *",
-    timezone="America/New_York",  # Misleading - EventBridge still uses UTC!
+    timezone="America/New_York",  # Misleading - Glue still uses UTC!
     description="Daily ingestion at 9 AM EST"
 )
 ```
@@ -327,8 +325,8 @@ Check recent executions:
 # View Glue job runs
 aws glue get-job-runs --job-name alur-ingest_orders-production --max-results 10
 
-# View EventBridge rule details
-aws events describe-rule --name alur-ingest_orders-production
+# View Glue SCHEDULED trigger details
+aws glue get-trigger --name alur-ingest_orders-schedule-production
 ```
 
 ### 6. Use Idempotency
@@ -377,38 +375,37 @@ def ingest_orders_afternoon():
     return _shared_ingestion_logic()
 ```
 
-### 2. EventBridge Uses UTC Only
+### 2. Glue Uses UTC Only
 
-All schedules run in UTC. EventBridge does not support timezone-aware scheduling.
+All schedules run in UTC. Glue does not support timezone-aware scheduling.
 
 ### 3. Minimum Frequency: 1 Minute
 
-EventBridge has a minimum interval of 1 minute. For sub-minute scheduling, use alternative solutions (Lambda, Kinesis, etc.).
+Glue has a minimum interval of 1 minute. For sub-minute scheduling, use alternative solutions (Lambda, Kinesis, etc.).
 
 ### 4. Execution Not Guaranteed
 
-EventBridge is "at least once" delivery. In rare cases, a schedule may trigger multiple times or not at all. Design pipelines to handle this.
+Glue is "at least once" delivery. In rare cases, a schedule may trigger multiple times or not at all. Design pipelines to handle this.
 
 ## Troubleshooting
 
 ### Schedule Not Triggering
 
-1. **Check EventBridge rule status:**
+1. **Check Glue SCHEDULED trigger status:**
    ```bash
-   aws events describe-rule --name alur-ingest_orders-production
+   aws glue get-trigger --name alur-ingest_orders-schedule-production
    ```
 
-2. **Verify rule is ENABLED:**
+2. **Verify trigger is ACTIVATED:**
    ```json
    {
-     "State": "ENABLED",  // Should be ENABLED
-     "ScheduleExpression": "cron(0 2 * * ? *)"
+     "State": "ACTIVATED",  // Should be ACTIVATED
+     "Type": "SCHEDULED",
+     "Schedule": "cron(0 2 * * ? *)"
    }
    ```
 
-3. **Check IAM permissions:**
-   - EventBridge needs `glue:StartJobRun` permission
-   - Role: `alur-eventbridge-glue-<environment>`
+3. **Glue triggers don't require additional IAM permissions** - the Glue job role is used automatically
 
 4. **Verify Glue job exists:**
    ```bash
@@ -417,15 +414,15 @@ EventBridge is "at least once" delivery. In rare cases, a schedule may trigger m
 
 ### Invalid Cron Expression
 
-**Error:** `ValueError: EventBridge cron expression must have 6 fields`
+**Error:** `ValueError: Glue cron expression must have 6 fields`
 
-**Solution:** Use EventBridge format (6 fields), not Unix cron (5 fields):
+**Solution:** Use Glue format (6 fields), not Unix cron (5 fields):
 
 ```python
 # ✗ Unix cron (5 fields)
 @schedule(cron="0 2 * * *")  # ERROR
 
-# ✓ EventBridge cron (6 fields)
+# ✓ Glue cron (6 fields)
 @schedule(cron="0 2 * * ? *")  # CORRECT
 ```
 
@@ -437,13 +434,13 @@ EventBridge is "at least once" delivery. In rare cases, a schedule may trigger m
 
 ## Cost Considerations
 
-- **EventBridge Rules:** Free for first 100 rules/month
-- **EventBridge Invocations:** $1.00 per million invocations
+- **Glue Rules:** Free for first 100 rules/month
+- **Glue Invocations:** $1.00 per million invocations
 - **Glue Job Runs:** Standard Glue pricing (based on DPU-hours)
 
 **Example Cost (Daily Schedule):**
 - 1 pipeline × 1 run/day × 30 days = 30 invocations/month
-- EventBridge cost: 30 / 1,000,000 × $1.00 = $0.00003/month (negligible)
+- Glue cost: 30 / 1,000,000 × $1.00 = $0.00003/month (negligible)
 - Glue cost: Depends on job runtime (unchanged from manual runs)
 
 **Conclusion:** Scheduling adds virtually zero cost overhead. You only pay for Glue execution time.

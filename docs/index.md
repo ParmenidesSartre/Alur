@@ -18,7 +18,7 @@ Alur is a production-ready framework for building modern data lake architectures
 - **File-Level Idempotency** - DynamoDB-based state tracking prevents duplicate ingestion and saves costs
 - **Multi-Source CSV Ingestion** - Ingest from multiple S3 locations in a single pipeline with independent tracking
 - **Pipeline Orchestration** - Automatic dependency resolution with DAG-based execution
-- **Automated Scheduling** - Cron-based pipeline scheduling via @schedule decorator with AWS EventBridge
+- **Automated Scheduling** - Cron-based pipeline scheduling via @schedule decorator with Glue SCHEDULED triggers
 - **Data Quality Validation** - Built-in quality checks with declarative expectations
 - **AWS-Native Deployment** - One-command deployment with auto-generated Terraform infrastructure
 - **Automatic Partition Registration** - Data immediately queryable in Athena after writes

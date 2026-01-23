@@ -142,8 +142,8 @@ def _detect_format(source_path: str) -> str:
     else:
         # Default fallback or raise error
         if '*' not in path_lower:
-             raise ValueError(f"Cannot auto-detect format from: {source_path}")
-        return 'parquet' # Safe default
+            raise ValueError(f"Cannot auto-detect format from: {source_path}")
+        return 'parquet'  # Safe default
 
 
 def _validate_csv_headers_from_s3(s3_path: str, target: Type) -> Dict[str, Any]:
@@ -504,10 +504,10 @@ def load_to_bronze(
     # If we have > 1000 files, passing list to Spark driver can be slow. 
     # For very large batches, logic should be batched, but fitting for SME scope.
     if len(paths_to_read) == 1 and '*' in paths_to_read[0]:
-         # It's a wildcard fallback
-         path_arg = paths_to_read[0]
+        # It's a wildcard fallback
+        path_arg = paths_to_read[0]
     else:
-         path_arg = paths_to_read
+        path_arg = paths_to_read
 
     default_options = {"mode": "PERMISSIVE"}
     if file_format == 'csv':

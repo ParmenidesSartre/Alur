@@ -467,14 +467,21 @@ def mark_processed(file_path: str):
 
 ### 2. Scheduled Execution
 
-**Status:** Removed (was broken)
+**Status:** ✅ Available (via @schedule decorator)
 
-**Impact:** No automatic pipeline triggering via EventBridge
+**Feature:** Automatic pipeline triggering via AWS Glue SCHEDULED triggers
 
-**Workarounds:**
-- Use AWS EventBridge directly to trigger Glue jobs
-- Use external schedulers (Airflow, Step Functions, cron)
-- Manual triggering via `alur run <pipeline>`
+**Usage:**
+```python
+from alur import schedule, pipeline
+
+@schedule(cron="0 2 * * ? *", description="Daily ingestion")
+@pipeline(sources={}, target=OrdersBronze)
+def ingest_orders():
+    return load_to_bronze(...)
+```
+
+See [SCHEDULING.md](SCHEDULING.md) for complete documentation.
 - Use AWS Glue workflow triggers
 
 ### 3. Sample-Based Validation Only

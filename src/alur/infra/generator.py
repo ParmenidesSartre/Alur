@@ -12,6 +12,12 @@ from typing import Dict, List, Any
 from alur.decorators import PipelineRegistry
 
 
+# Default configuration constants for Glue jobs
+GLUE_DEFAULT_VERSION = "4.0"
+GLUE_DEFAULT_DPU_CAPACITY = 2.0
+GLUE_DEFAULT_TIMEOUT_MINUTES = 30
+
+
 class InfrastructureGenerator:
     """Generates complete Terraform infrastructure from Alur project."""
 
@@ -493,9 +499,9 @@ resource "aws_glue_job" "{pipeline_name}_job" {{
     "--TempDir"                          = "s3://${{aws_s3_bucket.artifacts.bucket}}/temp/"
   }}
 
-  glue_version = "4.0"
-  max_capacity = 2.0
-  timeout      = 30
+  glue_version = "{GLUE_DEFAULT_VERSION}"
+  max_capacity = {GLUE_DEFAULT_DPU_CAPACITY}
+  timeout      = {GLUE_DEFAULT_TIMEOUT_MINUTES}
 
   tags = {{
     Environment = "{env}"

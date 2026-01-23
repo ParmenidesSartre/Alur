@@ -1,5 +1,5 @@
 """
-Cron expression validation for AWS EventBridge schedules.
+Cron expression validation for AWS Glue SCHEDULED triggers.
 """
 
 import re
@@ -7,9 +7,9 @@ import re
 
 def validate_cron_expression(cron: str) -> None:
     """
-    Validate AWS EventBridge cron expression format.
+    Validate AWS Glue SCHEDULED trigger cron expression format.
 
-    AWS EventBridge uses 6-field cron format:
+    AWS Glue SCHEDULED triggers use 6-field cron format:
     cron(minute hour day-of-month month day-of-week year)
 
     Args:
@@ -36,12 +36,12 @@ def validate_cron_expression(cron: str) -> None:
             "Cron expression must be a non-empty string"
         )
 
-    # EventBridge cron has 6 space-separated fields
+    # Glue SCHEDULED triggers use 6 space-separated cron fields
     fields = cron.split()
 
     if len(fields) != 6:
         raise ValueError(
-            f"EventBridge cron expression must have 6 fields, got {len(fields)}. "
+            f"Glue cron expression must have 6 fields, got {len(fields)}. "
             f"Format: 'minute hour day-of-month month day-of-week year'. "
             f"Example: '0 2 * * ? *' (daily at 2 AM UTC)"
         )
