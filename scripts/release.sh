@@ -40,7 +40,7 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
 fi
 
 echo ""
-echo -e "${YELLOW}Step 1/6: Checking git status...${NC}"
+echo -e "${YELLOW}Step 1/5: Checking git status...${NC}"
 if [[ -n $(git status -s) ]]; then
     echo -e "${RED}Error: Working directory has uncommitted changes${NC}"
     git status -s
@@ -49,50 +49,29 @@ fi
 echo -e "${GREEN}✓ Working directory clean${NC}"
 
 echo ""
-echo -e "${YELLOW}Step 2/6: Updating version numbers...${NC}"
-
-# Update pyproject.toml
-sed -i.bak "s/^version = .*/version = \"${VERSION}\"/" pyproject.toml
-rm -f pyproject.toml.bak
-echo -e "${GREEN}✓ Updated pyproject.toml${NC}"
-
-# Update src/alur/__init__.py
-sed -i.bak "s/^__version__ = .*/__version__ = \"${VERSION}\"/" src/alur/__init__.py
-rm -f src/alur/__init__.py.bak
-echo -e "${GREEN}✓ Updated src/alur/__init__.py${NC}"
-
-# Update README.md current version
-sed -i.bak "s/\*\*Current Version:\*\* [0-9.]*/**Current Version:** ${VERSION}/" README.md
-rm -f README.md.bak
-echo -e "${GREEN}✓ Updated README.md${NC}"
-
-# Reminder to update CHANGELOG.md
-echo ""
-echo -e "${YELLOW}⚠️  REMINDER: Update CHANGELOG.md manually${NC}"
-echo "   Add entry for [${VERSION}] - $(date +%Y-%m-%d)"
-echo ""
-read -p "Press Enter when CHANGELOG.md is updated..."
+echo -e "${YELLOW}Step 2/5: Bumping version numbers...${NC}"
+python3 scripts/bump_version.py ${VERSION}
+if [ $? -ne 0 ]; then
+    echo -e "${RED}Error: Version bump failed${NC}"
+    exit 1
+fi
 
 echo ""
-echo -e "${YELLOW}Step 3/6: Committing version bump...${NC}"
-git add pyproject.toml src/alur/__init__.py README.md CHANGELOG.md
+echo -e "${YELLOW}Step 3/5: Committing version bump...${NC}"
+git add .
 git commit -m "chore: bump version to v${VERSION}"
 echo -e "${GREEN}✓ Version bump committed${NC}"
 
 echo ""
-echo -e "${YELLOW}Step 4/6: Pushing to main...${NC}"
+echo -e "${YELLOW}Step 4/5: Pushing to main...${NC}"
 git push origin main
 echo -e "${GREEN}✓ Pushed to main${NC}"
 
 echo ""
-echo -e "${YELLOW}Step 5/6: Creating git tag...${NC}"
+echo -e "${YELLOW}Step 5/5: Creating and pushing tag...${NC}"
 git tag -a "${TAG}" -m "Release ${TAG}: ${DESCRIPTION}"
-echo -e "${GREEN}✓ Tag ${TAG} created${NC}"
-
-echo ""
-echo -e "${YELLOW}Step 6/6: Pushing tag to GitHub...${NC}"
 git push origin "${TAG}"
-echo -e "${GREEN}✓ Tag pushed to GitHub${NC}"
+echo -e "${GREEN}✓ Tag ${TAG} pushed to GitHub${NC}"
 
 echo ""
 echo -e "${GREEN}====================================${NC}"
