@@ -402,7 +402,7 @@ mypy src/alur
 
 ## Project Status
 
-**Current Version:** 0.7.4 (Released 2026-01-23)
+**Current Version:** 0.7.5 (Released 2026-01-23)
 
 ### Implemented Features
 

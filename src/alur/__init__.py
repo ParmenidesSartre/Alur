@@ -77,7 +77,7 @@ from .batch_ingestion import (
     validate_csv_bytes,
 )
 
-__version__ = "0.7.4"
+__version__ = "0.7.5"
 
 __all__ = [
     # Table classes

@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.5] - 2026-01-23
+
+### Fixed
+- **Critical EventBridge Scheduler Deployment Failures** - Multiple fixes for `@schedule` decorator AWS deployment
+  - Fixed undefined Terraform variables (`var.environment`, `var.aws_region`, `var.aws_account_id`)
+  - Now uses hardcoded config values matching pattern in other terraform generators
+  - Fixed incorrect Glue job resource reference (`alur_{pipeline_name}` → `{pipeline_name}_job`)
+  - **Architecture Fix**: EventBridge cannot directly target Glue jobs
+    - Added Glue workflow generation for each scheduled pipeline
+    - Added EVENT-type Glue trigger to connect workflow → job
+    - EventBridge now targets workflow ARN instead of job ARN
+  - Updated IAM permissions from `glue:StartJobRun` to `glue:notifyEvent` for workflows
+  - Tested successfully with end-to-end AWS deployment in ap-southeast-5
+  - Scheduler feature is now fully functional in production
 ## [0.7.4] - 2026-01-23
 
 ### Fixed
