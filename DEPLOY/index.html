@@ -1593,7 +1593,7 @@
 <li><strong>Load Configuration</strong> - Reads your project settings</li>
 <li><strong>Build Python Wheel</strong> - Packages your pipelines, contracts, and config</li>
 <li><strong>Generate Terraform</strong> - Creates infrastructure-as-code files</li>
-<li><strong>Apply Terraform</strong> - Provisions AWS resources (S3, Glue, DynamoDB)</li>
+<li><strong>Apply Terraform</strong> - Provisions AWS resources (S3, Glue)</li>
 <li><strong>Upload to S3</strong> - Deploys your code and driver script</li>
 <li><strong>Summary</strong> - Shows deployment details and next steps</li>
 </ol>
@@ -1665,7 +1665,6 @@
 <ul>
 <li>S3 buckets: bronze, silver, gold, artifacts</li>
 <li>IAM roles: Glue execution role</li>
-<li>DynamoDB table: watermarks and state</li>
 <li>Glue catalog: databases for each layer</li>
 </ul>
 <h2 id="example-workflow">Example Workflow<a class="headerlink" href="#example-workflow" title="Permanent link">&para;</a></h2>
@@ -1771,8 +1770,7 @@
 <h2 id="cost-considerations">Cost Considerations<a class="headerlink" href="#cost-considerations" title="Permanent link">&para;</a></h2>
 <p>With <code>alur deploy</code>, you create:
 - <strong>S3 buckets</strong>: $0.023/GB stored (first 50 TB)
-- <strong>Glue jobs</strong>: $0.44/DPU-hour (only when running)
-- <strong>DynamoDB</strong>: On-demand pricing (only when accessed)</p>
+- <strong>Glue jobs</strong>: $0.44/DPU-hour (only when running)</p>
 <p><strong>Idle cost</strong>: $0.00 when not running jobs!</p>
 <h2 id="advanced-multi-environment-setup">Advanced: Multi-Environment Setup<a class="headerlink" href="#advanced-multi-environment-setup" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="c1"># Deploy to multiple environments</span>
