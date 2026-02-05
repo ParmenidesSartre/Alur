@@ -58,32 +58,14 @@ This framework demonstrates that modern data lake architectures can be both powe
 - Java 8 or 11 (required for PySpark)
 - AWS CLI configured (for deployment)
 
-### From Source
+### Install via PyPI
 
 ```bash
-# Clone the repository
-git clone https://github.com/ParmenidesSartre/Alur.git
-cd Alur
+# Core framework
+pip install alur
 
-# Create and activate virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install with all dependencies
-pip install -e ".[all]"
-```
-
-### Install Options
-
-```bash
-# Core framework only
-pip install -e .
-
-# With all dependencies
-pip install -e ".[all]"
-
-# Development dependencies (includes testing tools)
-pip install -e ".[dev]"
+# With all optional dependencies
+pip install alur[all]
 ```
 
 ### Verify Installation
