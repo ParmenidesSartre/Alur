@@ -80,7 +80,7 @@ Changelog = "https://github.com/ParmenidesSartre/Alur/blob/main/CHANGELOG.md"
 where = ["src"]
 
 [tool.setuptools.package-data]
-alur = ["templates/**/*"]
+alur = ["templates/**/*.py", "templates/**/*.toml", "templates/**/*.md"]
 
 [tool.black]
 line-length = 88
