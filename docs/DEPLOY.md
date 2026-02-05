@@ -9,7 +9,7 @@ The `alur deploy` command handles the entire deployment workflow:
 1. **Load Configuration** - Reads your project settings
 2. **Build Python Wheel** - Packages your pipelines, contracts, and config
 3. **Generate Terraform** - Creates infrastructure-as-code files
-4. **Apply Terraform** - Provisions AWS resources (S3, Glue, DynamoDB)
+4. **Apply Terraform** - Provisions AWS resources (S3, Glue)
 5. **Upload to S3** - Deploys your code and driver script
 6. **Summary** - Shows deployment details and next steps
 
@@ -67,7 +67,6 @@ Generic Glue execution script that loads your wheel and runs pipelines.
 ### Infrastructure (if not skipped)
 - S3 buckets: bronze, silver, gold, artifacts
 - IAM roles: Glue execution role
-- DynamoDB table: watermarks and state
 - Glue catalog: databases for each layer
 
 ## Example Workflow
@@ -200,7 +199,6 @@ The driver script:
 With `alur deploy`, you create:
 - **S3 buckets**: $0.023/GB stored (first 50 TB)
 - **Glue jobs**: $0.44/DPU-hour (only when running)
-- **DynamoDB**: On-demand pricing (only when accessed)
 
 **Idle cost**: $0.00 when not running jobs!
 

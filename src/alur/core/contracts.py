@@ -106,11 +106,16 @@ class BaseTable(metaclass=BaseTableMeta):
         Get the data lake layer for this table.
 
         Returns:
-            str: 'bronze' or 'unknown'
+            str: 'bronze', 'silver', 'gold', or 'unknown'
         """
-        from . import BronzeTable
+        from . import BronzeTable, SilverTable, GoldTable
 
-        if issubclass(cls, BronzeTable) and cls is not BronzeTable:
+        # Check in reverse order of inheritance (most specific first)
+        if issubclass(cls, GoldTable) and cls is not GoldTable:
+            return "gold"
+        elif issubclass(cls, SilverTable) and cls is not SilverTable:
+            return "silver"
+        elif issubclass(cls, BronzeTable) and cls is not BronzeTable:
             return "bronze"
         else:
             return "unknown"
@@ -210,8 +215,95 @@ class BronzeTable(BaseTable):
         return cls._write_mode
 
 
+class SilverTable(BaseTable):
+    """
+    Silver layer table (cleaned, validated, deduplicated data).
+
+    - Format: Iceberg (ACID transactions, schema evolution)
+    - Write mode: Merge (upsert semantics)
+    - Purpose: Cleaned data with business rules applied
+
+    Silver tables use Iceberg format for ACID guarantees and schema evolution.
+    Writes use merge/upsert semantics based on primary_key.
+
+    Example:
+        class OrdersSilver(SilverTable):
+            order_id = StringField(nullable=False)
+            amount = IntegerField(nullable=False)
+
+            class Meta:
+                primary_key = ["order_id"]  # Required for merge
+                partition_by = ["created_at"]
+    """
+
+    _format = "iceberg"
+    _write_mode = "merge"
+
+    @classmethod
+    def get_format(cls) -> str:
+        """Get the storage format for Silver tables."""
+        return cls._format
+
+    @classmethod
+    def get_write_mode(cls) -> str:
+        """Get the write mode for Silver tables."""
+        return cls._write_mode
+
+    @classmethod
+    def get_merge_keys(cls) -> Optional[List[str]]:
+        """
+        Get merge keys from Meta.primary_key.
+
+        Returns:
+            List of column names to use as merge keys, or None if not defined.
+
+        Raises:
+            ValueError: If merge mode is used but primary_key is not defined.
+        """
+        if not hasattr(cls, '_meta') or not cls._meta.primary_key:
+            return None
+        return cls._meta.primary_key
+
+
+class GoldTable(BaseTable):
+    """
+    Gold layer table (business aggregates, analytics-ready).
+
+    - Format: Iceberg (ACID transactions, schema evolution)
+    - Write mode: Overwrite (full refresh)
+    - Purpose: Business metrics and aggregates
+
+    Gold tables use Iceberg format for ACID guarantees and schema evolution.
+    Writes typically use overwrite mode for full refresh aggregations.
+
+    Example:
+        class DailySalesGold(GoldTable):
+            date = DateField(nullable=False)
+            total_revenue = DecimalField(nullable=False)
+            order_count = IntegerField(nullable=False)
+
+            class Meta:
+                partition_by = ["date"]
+    """
+
+    _format = "iceberg"
+    _write_mode = "overwrite"
+
+    @classmethod
+    def get_format(cls) -> str:
+        """Get the storage format for Gold tables."""
+        return cls._format
+
+    @classmethod
+    def get_write_mode(cls) -> str:
+        """Get the write mode for Gold tables."""
+        return cls._write_mode
+
+
 __all__ = [
     "BaseTable",
     "BronzeTable",
+    "SilverTable",
+    "GoldTable",
     "TableMeta",
 ]

@@ -6,10 +6,11 @@ import click
 import os
 import shutil
 from pathlib import Path
+from alur import __version__
 
 
 @click.group()
-@click.version_option(version="0.3.0")
+@click.version_option(version=__version__)
 def main():
     """
     Alur Framework - A Python framework for building data lake pipelines.
@@ -691,30 +692,6 @@ resource "aws_glue_catalog_database" "alur" {{
     with open(output_path / "glue.tf", "w") as f:
         f.write(glue_tf)
     click.echo("  Created: glue.tf")
-
-    # DynamoDB state table
-    dynamodb_tf = f"""# DynamoDB Table for Pipeline State
-
-resource "aws_dynamodb_table" "state" {{
-  name           = "{getattr(settings, 'STATE_TABLE', 'alur-state-dev')}"
-  billing_mode   = "PAY_PER_REQUEST"
-  hash_key       = "key"
-
-  attribute {{
-    name = "key"
-    type = "S"
-  }}
-
-  tags = {{
-    Name        = "Alur State Table"
-    Environment = "{getattr(settings, 'ENVIRONMENT', 'dev')}"
-  }}
-}}
-"""
-
-    with open(output_path / "dynamodb.tf", "w") as f:
-        f.write(dynamodb_tf)
-    click.echo("  Created: dynamodb.tf")
 
     # Provider configuration
     provider_tf = f"""# Terraform Provider Configuration

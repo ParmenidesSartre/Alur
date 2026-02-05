@@ -6,6 +6,7 @@ Manages pipeline registration and dependency injection.
 from typing import Dict, Type, Callable, Any, Optional, List
 from functools import wraps
 import inspect
+from alur.core.registry import Registry
 
 
 class Pipeline:
@@ -29,10 +30,9 @@ class Pipeline:
         return f"Pipeline(name='{self.name}', sources={list(self.sources.keys())}, target={self.target.__name__})"
 
 
-class PipelineRegistry:
+class PipelineRegistry(Registry[Pipeline]):
     """Global registry for all pipelines."""
 
-    _pipelines: Dict[str, Pipeline] = {}
     _dependency_graph: Dict[str, List[str]] = {}
 
     @classmethod
@@ -43,10 +43,8 @@ class PipelineRegistry:
         Args:
             pipeline: Pipeline instance to register
         """
-        if pipeline.name in cls._pipelines:
-            raise ValueError(f"Pipeline '{pipeline.name}' is already registered")
-
-        cls._pipelines[pipeline.name] = pipeline
+        # Use parent's register which handles duplicate checking
+        super().register(pipeline.name, pipeline)
 
         # Build dependency graph (target table -> source tables)
         target_table = pipeline.target.get_table_name()
@@ -56,24 +54,6 @@ class PipelineRegistry:
             cls._dependency_graph[target_table] = []
 
         cls._dependency_graph[target_table].extend(source_tables)
-
-    @classmethod
-    def get(cls, name: str) -> Optional[Pipeline]:
-        """
-        Get a pipeline by name.
-
-        Args:
-            name: Pipeline name
-
-        Returns:
-            Pipeline instance or None if not found
-        """
-        return cls._pipelines.get(name)
-
-    @classmethod
-    def get_all(cls) -> Dict[str, Pipeline]:
-        """Get all registered pipelines."""
-        return cls._pipelines.copy()
 
     @classmethod
     def get_dependency_graph(cls) -> Dict[str, List[str]]:
@@ -129,7 +109,7 @@ class PipelineRegistry:
     @classmethod
     def clear(cls) -> None:
         """Clear all registered pipelines (useful for testing)."""
-        cls._pipelines.clear()
+        super().clear()
         cls._dependency_graph.clear()
 
 

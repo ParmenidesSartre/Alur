@@ -25,6 +25,8 @@ data lake architectures for resource-constrained organizations.
 from .core import (
     BaseTable,
     BronzeTable,
+    SilverTable,
+    GoldTable,
     StringField,
     IntegerField,
     LongField,
@@ -66,6 +68,7 @@ from .ingestion import (
     load_to_bronze,
     validate_schema,
     SchemaValidationError,
+    IdempotencyStrategy,
 )
 
 from .batch_ingestion import (
@@ -77,12 +80,22 @@ from .batch_ingestion import (
     validate_csv_bytes,
 )
 
+from .transformation import (
+    deduplicate,
+    fill_nulls,
+    cast_types,
+    add_silver_metadata,
+    transform_to_silver,
+)
+
 __version__ = "0.7.5"
 
 __all__ = [
     # Table classes
     "BaseTable",
     "BronzeTable",
+    "SilverTable",
+    "GoldTable",
     # Field types
     "StringField",
     "IntegerField",
@@ -124,6 +137,12 @@ __all__ = [
     "CsvValidationResult",
     "ingest_csv_sources_to_bronze",
     "validate_csv_bytes",
+    # Transformation (Silver layer)
+    "deduplicate",
+    "fill_nulls",
+    "cast_types",
+    "add_silver_metadata",
+    "transform_to_silver",
     # Engine
     "AWSAdapter",
     "PipelineRunner",

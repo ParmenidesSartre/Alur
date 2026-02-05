@@ -43,8 +43,8 @@
 ┌─────────────────────────────────────────────────────────────┐
 │                        AWS                                  │
 ├─────────────┬─────────────┬─────────────┬──────────────────┤
-│     S3      │  AWS Glue   │  DynamoDB   │  Glue SCHEDULED  │
-│  (Storage)  │   (Spark)   │   (State)   │    (Triggers)    │
+│     S3      │  AWS Glue   │  Secrets Mgr │  Glue SCHEDULED  │
+│  (Storage)  │   (Spark)   │  (Creds)    │    (Triggers)    │
 └─────────────┴─────────────┴─────────────┴──────────────────┘
 ```
 

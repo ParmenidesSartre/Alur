@@ -82,10 +82,15 @@ class InfrastructureGenerator:
         return contracts
 
     def _get_layer(self, table_class) -> str:
-        """Determine which layer (bronze) a table belongs to."""
-        from alur.core.contracts import BronzeTable
+        """Determine which layer (bronze, silver, gold) a table belongs to."""
+        from alur.core.contracts import BronzeTable, SilverTable, GoldTable
 
-        if issubclass(table_class, BronzeTable):
+        # Check in reverse order of inheritance (most specific first)
+        if issubclass(table_class, GoldTable):
+            return "gold"
+        elif issubclass(table_class, SilverTable):
+            return "silver"
+        elif issubclass(table_class, BronzeTable):
             return "bronze"
         return "unknown"
 
@@ -96,6 +101,8 @@ class InfrastructureGenerator:
 
         bucket_map = {
             "bronze": "BRONZE_BUCKET",
+            "silver": "SILVER_BUCKET",
+            "gold": "GOLD_BUCKET",
         }
 
         bucket_var = bucket_map.get(layer, "BRONZE_BUCKET")
@@ -125,6 +132,8 @@ provider "aws" {{
         region = getattr(self.config, "AWS_REGION", "ap-southeast-5")
 
         bronze = getattr(self.config, "BRONZE_BUCKET", f"alur-bronze-{env}")
+        silver = getattr(self.config, "SILVER_BUCKET", f"alur-silver-{env}")
+        gold = getattr(self.config, "GOLD_BUCKET", f"alur-gold-{env}")
         artifacts = getattr(self.config, "ARTIFACTS_BUCKET", f"alur-artifacts-{env}")
         landing = getattr(self.config, "LANDING_BUCKET", f"alur-landing-{env}")
 
@@ -136,6 +145,27 @@ resource "aws_s3_bucket" "bronze" {{
   tags = {{
     Environment = "{env}"
     Layer       = "bronze"
+    Description = "Raw ingested data (Parquet)"
+    ManagedBy   = "alur"
+  }}
+}}
+
+resource "aws_s3_bucket" "silver" {{
+  bucket = "{silver}"
+  tags = {{
+    Environment = "{env}"
+    Layer       = "silver"
+    Description = "Cleaned and deduplicated data (Iceberg)"
+    ManagedBy   = "alur"
+  }}
+}}
+
+resource "aws_s3_bucket" "gold" {{
+  bucket = "{gold}"
+  tags = {{
+    Environment = "{env}"
+    Layer       = "gold"
+    Description = "Aggregated business metrics (Iceberg)"
     ManagedBy   = "alur"
   }}
 }}
@@ -155,6 +185,22 @@ resource "aws_s3_bucket" "landing" {{
     Layer       = "landing"
     ManagedBy   = "alur"
   }}
+}}
+
+# Bucket outputs for easy reference
+output "bronze_bucket" {{
+  value       = aws_s3_bucket.bronze.id
+  description = "Bronze layer S3 bucket name"
+}}
+
+output "silver_bucket" {{
+  value       = aws_s3_bucket.silver.id
+  description = "Silver layer S3 bucket name"
+}}
+
+output "gold_bucket" {{
+  value       = aws_s3_bucket.gold.id
+  description = "Gold layer S3 bucket name"
 }}
 '''
 
@@ -212,6 +258,10 @@ resource "aws_iam_role_policy" "glue_s3_policy" {{
         Resource = [
           "${{aws_s3_bucket.bronze.arn}}/*",
           "${{aws_s3_bucket.bronze.arn}}",
+          "${{aws_s3_bucket.silver.arn}}/*",
+          "${{aws_s3_bucket.silver.arn}}",
+          "${{aws_s3_bucket.gold.arn}}/*",
+          "${{aws_s3_bucket.gold.arn}}",
           "${{aws_s3_bucket.artifacts.arn}}/*",
           "${{aws_s3_bucket.artifacts.arn}}",
           "${{aws_s3_bucket.landing.arn}}/*",
@@ -246,18 +296,6 @@ resource "aws_iam_role_policy" "glue_s3_policy" {{
       {{
         Effect = "Allow"
         Action = [
-          "dynamodb:PutItem",
-          "dynamodb:GetItem",
-          "dynamodb:UpdateItem",
-          "dynamodb:Query",
-          "dynamodb:Scan",
-          "dynamodb:DescribeTable"
-        ]
-        Resource = "arn:aws:dynamodb:*:*:table/alur-ingestion-state"
-      }},
-      {{
-        Effect = "Allow"
-        Action = [
           "lakeformation:GetDataAccess",
           "lakeformation:GrantPermissions",
           "lakeformation:RevokePermissions",
@@ -274,61 +312,57 @@ resource "aws_iam_role_policy" "glue_s3_policy" {{
 }}
 '''
 
-    def generate_dynamodb_tf(self) -> str:
-        """Generate DynamoDB table for ingestion state tracking."""
-        env = getattr(self.config, "ENVIRONMENT", "dev")
-
-        return f'''# DynamoDB Table for Ingestion State Tracking
-# Auto-generated - do not edit manually
-# Used for idempotency to prevent duplicate ingestion
-
-resource "aws_dynamodb_table" "ingestion_state" {{
-  name           = "alur-ingestion-state"
-  billing_mode   = "PAY_PER_REQUEST"  # On-demand pricing for SMEs
-  hash_key       = "ingestion_key"
-  range_key      = "file_path"
-
-  attribute {{
-    name = "ingestion_key"
-    type = "S"
-  }}
-
-  attribute {{
-    name = "file_path"
-    type = "S"
-  }}
-
-  tags = {{
-    Environment = "{env}"
-    ManagedBy   = "alur"
-    Purpose     = "ingestion-state-tracking"
-  }}
-}}
-'''
-
     def generate_glue_database_tf(self, contracts: Dict[str, Any]) -> str:
         """
         Generate Glue databases and tables terraform.
 
         Creates:
         - bronze_layer database (contains all bronze tables)
+        - silver_layer database (contains all silver tables)
+        - gold_layer database (contains all gold tables)
 
-        Each source gets one table in the bronze_layer database.
+        Each contract gets one table in its respective layer database.
         """
         env = getattr(self.config, "ENVIRONMENT", "dev")
 
-        tf_content = f'''# Glue Catalog Database - Bronze Layer
+        tf_content = f'''# Glue Catalog Databases - Multi-Layer Architecture
 # Auto-generated from contracts - do not edit manually
 
 # Bronze Database - Raw data layer with metadata
 resource "aws_glue_catalog_database" "bronze" {{
   name = "bronze_layer"
 
-  description = "Bronze layer - raw data as-is with ingestion metadata"
+  description = "Bronze layer - raw data as-is with ingestion metadata (Parquet)"
 
   tags = {{
     Environment = "{env}"
     Layer       = "bronze"
+    ManagedBy   = "alur"
+  }}
+}}
+
+# Silver Database - Cleaned and deduplicated data
+resource "aws_glue_catalog_database" "silver" {{
+  name = "silver_layer"
+
+  description = "Silver layer - cleaned, deduplicated, and validated data (Iceberg)"
+
+  tags = {{
+    Environment = "{env}"
+    Layer       = "silver"
+    ManagedBy   = "alur"
+  }}
+}}
+
+# Gold Database - Aggregated business metrics
+resource "aws_glue_catalog_database" "gold" {{
+  name = "gold_layer"
+
+  description = "Gold layer - aggregated business metrics and KPIs (Iceberg)"
+
+  tags = {{
+    Environment = "{env}"
+    Layer       = "gold"
     ManagedBy   = "alur"
   }}
 }}
@@ -346,6 +380,14 @@ resource "aws_glue_catalog_database" "bronze" {{
                 "bronze": {
                     "database": "aws_glue_catalog_database.bronze.name",
                     "bucket": "aws_s3_bucket.bronze.bucket"
+                },
+                "silver": {
+                    "database": "aws_glue_catalog_database.silver.name",
+                    "bucket": "aws_s3_bucket.silver.bucket"
+                },
+                "gold": {
+                    "database": "aws_glue_catalog_database.gold.name",
+                    "bucket": "aws_s3_bucket.gold.bucket"
                 },
             }
 
@@ -586,7 +628,6 @@ resource "aws_glue_trigger" "{trigger_name_tf}" {{
             "provider.tf": self.generate_provider_tf(),
             "s3.tf": self.generate_s3_tf(),
             "iam.tf": self.generate_iam_tf(),
-            "dynamodb.tf": self.generate_dynamodb_tf(),
             "glue_database.tf": self.generate_glue_database_tf(contracts),
             "glue_jobs.tf": self.generate_glue_jobs_tf(),
             "schedules.tf": self.generate_schedules_tf(),

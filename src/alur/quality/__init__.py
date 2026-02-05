@@ -243,35 +243,30 @@ def column_matches_pattern(column_name: str, pattern: str):
     return check
 
 
-def row_count_increased_since_last_run(min_increase: int = 0):
-    """
-    Check that row count increased since last run.
-    Requires state tracking (TODO: implement with DynamoDB).
-    """
-    def check(df) -> tuple[bool, str]:
-        current_count = df.count()
-        # TODO: Get previous count from state store
-        # For now, always pass
-        return (True, f"Current row count: {current_count} (state tracking not yet implemented)")
-    return check
-
-
 def freshness_check(timestamp_column: str, max_age_hours: int):
     """Check that data is fresh (most recent record within max_age_hours)."""
     def check(df) -> tuple[bool, str]:
-        from pyspark.sql.functions import col, max as spark_max, current_timestamp, unix_timestamp
-        from datetime import datetime, timedelta
+        from pyspark.sql.functions import col, max as spark_max
+        from datetime import datetime, timezone
 
         latest_ts = df.agg(spark_max(col(timestamp_column))).collect()[0][0]
 
         if latest_ts is None:
             return (False, f"No data in timestamp column '{timestamp_column}'")
 
-        # Convert to datetime if needed
+        # Convert to datetime if needed and ensure timezone awareness
         if isinstance(latest_ts, str):
             latest_ts = datetime.fromisoformat(latest_ts.replace('Z', '+00:00'))
+        elif isinstance(latest_ts, datetime) and latest_ts.tzinfo is None:
+            # Make naive datetime timezone-aware (assume UTC)
+            latest_ts = latest_ts.replace(tzinfo=timezone.utc)
 
-        age_hours = (datetime.now() - latest_ts).total_seconds() / 3600
+        # Use UTC time for consistent comparison
+        now_utc = datetime.now(timezone.utc)
+        if latest_ts.tzinfo is None:
+            latest_ts = latest_ts.replace(tzinfo=timezone.utc)
+
+        age_hours = (now_utc - latest_ts).total_seconds() / 3600
         passed = age_hours <= max_age_hours
 
         msg = (f"Latest record is {age_hours:.1f} hours old "
@@ -298,6 +293,5 @@ __all__ = [
     "schema_has_columns",
     "column_values_in_range",
     "column_matches_pattern",
-    "row_count_increased_since_last_run",
     "freshness_check",
 ]

@@ -1,6 +1,6 @@
 """Engine module for Alur framework."""
 
-from .adapter import RuntimeAdapter, LocalAdapter, AWSAdapter
+from .adapter import RuntimeAdapter, AWSAdapter
 from .spark import (
     get_spark_session,
     stop_spark_session,
@@ -11,7 +11,6 @@ from .runner import PipelineRunner
 
 __all__ = [
     "RuntimeAdapter",
-    "LocalAdapter",
     "AWSAdapter",
     "get_spark_session",
     "stop_spark_session",

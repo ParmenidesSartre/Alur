@@ -338,14 +338,13 @@ Ensure your pipelines are idempotent (safe to run multiple times):
 @pipeline(sources={}, target=OrdersBronze)
 def ingest_orders():
     """
-    Idempotent ingestion - files tracked in DynamoDB.
+    Idempotent ingestion via Glue Job Bookmarks.
     Re-running won't create duplicates.
     """
     return load_to_bronze(
         spark,
         source_path="s3://bucket/orders/*.csv",
-        target=OrdersBronze,
-        enable_idempotency=True  # Prevents duplicate ingestion
+        target=OrdersBronze
     )
 ```
 

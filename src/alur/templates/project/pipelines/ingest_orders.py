@@ -36,18 +36,16 @@ def ingest_orders():
     #     "s3://landing-zone/backfill/orders/*.csv"
     # ]
     #
-    # Idempotency: Enabled by default (enable_idempotency=True)
-    # - Files are tracked in DynamoDB to prevent duplicate ingestion
+    # Idempotency: Handled automatically by Glue Job Bookmarks
     # - Re-running the pipeline will skip already-processed files
-    # - Set enable_idempotency=False to reprocess all files
+    # - Reset via: aws glue reset-job-bookmark --job-name <job-name>
     df = load_to_bronze(
         spark,
         source_path="s3://landing-zone/orders/*.csv",
         source_system="sales_db",
-        target=OrdersBronze,  # Required for schema validation and idempotency
+        target=OrdersBronze,  # Required for schema validation
         validate=True,  # Validate CSV headers match contract schema
         strict_mode=False,  # False: skip bad files, True: fail on bad files
-        enable_idempotency=True,  # Track files to prevent duplicate ingestion
         options={
             "header": "true",
             "inferSchema": "true",

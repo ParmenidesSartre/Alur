@@ -4,7 +4,7 @@ Unit tests for idempotency features.
 Tests:
 1. Multi-source path normalization
 2. File tracking metadata attachment
-3. DynamoDB state methods
+3. Glue Job Bookmark state
 """
 
 def test_multi_source_path_normalization():

@@ -30,7 +30,7 @@ This framework demonstrates that modern data lake architectures can be both powe
 
 - **Declarative Table Definitions** - Define tables using Python classes with type-safe schema management
 - **Production-Grade Bronze Ingestion** - Schema validation, automatic idempotency, multi-source support, and Parquet output
-- **File-Level Idempotency** - DynamoDB-based state tracking prevents duplicate ingestion and saves costs
+- **File-Level Idempotency** - Glue Job Bookmark-based tracking prevents duplicate ingestion automatically
 - **Multi-Source CSV Ingestion** - Ingest from multiple S3 locations in a single pipeline with independent tracking
 - **Pipeline Orchestration** - Automatic dependency resolution with DAG-based execution
 - **Automated Scheduling** - Cron-based pipeline scheduling via @schedule decorator with AWS Glue SCHEDULED triggers
@@ -225,7 +225,7 @@ alur deploy --env dev
 This will:
 1. Build Python wheel packages
 2. Generate Terraform infrastructure code
-3. Deploy AWS resources (S3, Glue, DynamoDB, IAM)
+3. Deploy AWS resources (S3, Glue, IAM)
 4. Upload code artifacts to S3
 5. Create/update Glue jobs
 
@@ -411,7 +411,7 @@ mypy src/alur
 - Type-safe field system with 10+ field types
 - Pipeline decorator with automatic dependency injection
 - Production-grade CSV ingestion:
-  - File-level idempotency using DynamoDB state tracking
+  - File-level idempotency using Glue Job Bookmarks
   - Multi-source CSV ingestion from multiple S3 locations
   - Schema validation against table contracts
   - CSV header validation with strict/non-strict modes
@@ -426,7 +426,7 @@ mypy src/alur
 - Automatic partition registration in Glue Catalog
 - Comprehensive CLI (init, run, deploy, logs, validate, list, destroy, schedules)
 - AWSAdapter with AWS Glue integration
-- Auto-generated Terraform infrastructure (S3, Glue, DynamoDB, IAM)
+- Auto-generated Terraform infrastructure (S3, Glue, IAM)
 - One-command deployment workflow
 - Pre-deployment validation and error checking
 
@@ -434,8 +434,7 @@ mypy src/alur
 
 🔜 **Near-Term**
 - Silver/Gold layers with Apache Iceberg support
-- Batch DynamoDB operations for better idempotency performance
-- File version detection using S3 ETag comparison
+- Database ingestion via JDBC with Glue Job Bookmarks
 
 📋 **Future**
 - Schema evolution support for Iceberg tables

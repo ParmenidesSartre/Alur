@@ -15,7 +15,7 @@ Alur is a production-ready framework for building modern data lake architectures
 
 - **Declarative Table Definitions** - Define tables using Python classes with type-safe schema management
 - **Production-Grade Bronze Ingestion** - Schema validation, automatic idempotency, multi-source support, and Parquet output
-- **File-Level Idempotency** - DynamoDB-based state tracking prevents duplicate ingestion and saves costs
+- **File-Level Idempotency** - Glue Job Bookmark-based tracking prevents duplicate ingestion automatically
 - **Multi-Source CSV Ingestion** - Ingest from multiple S3 locations in a single pipeline with independent tracking
 - **Pipeline Orchestration** - Automatic dependency resolution with DAG-based execution
 - **Automated Scheduling** - Cron-based pipeline scheduling via @schedule decorator with Glue SCHEDULED triggers

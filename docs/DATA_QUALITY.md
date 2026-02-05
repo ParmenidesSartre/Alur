@@ -515,7 +515,7 @@ def check_against_previous_run(df):
     """Compare to previous run metrics."""
     current_count = df.count()
 
-    # TODO: Load previous count from DynamoDB/S3
+    # TODO: Load previous count from state store
     # previous_count = load_from_state_store()
 
     # For now, return pass

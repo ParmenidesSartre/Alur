@@ -435,27 +435,17 @@ The following features are **not yet implemented** in the Spark-based `load_to_b
 - Increased storage costs
 - Wasted compute resources
 
-**Workarounds:**
-- Use the batch ingestion module (`alur.batch_ingestion.ingest_csv_sources_to_bronze()`) which has better support for batch processing
-- Implement your own deduplication logic (e.g., check DynamoDB before processing)
-- Use unique file paths and manual file management
-- Add deduplication in Silver layer transformations
+**Solution:**
+- `load_to_bronze()` uses Glue Job Bookmarks automatically — no custom state needed
+- Enable bookmarks in your Glue job configuration and call `job.commit()` at the end
+- Reset via `aws glue reset-job-bookmark --job-name <name>` to reprocess
 
-**Example of manual deduplication:**
+**Example:**
 ```python
-import boto3
-from datetime import datetime
-
-dynamodb = boto3.resource('dynamodb')
-table = dynamodb.Table('alur-ingestion-state')
-
 def should_process_file(file_path: str) -> bool:
-    """Check if file was already processed."""
-    try:
-        response = table.get_item(Key={'file_path': file_path})
-        return 'Item' not in response
-    except:
-        return True
+    """With Glue Job Bookmarks, this is handled automatically.
+    Just ensure job.commit() is called at the end of your Glue script."""
+    return True  # Bookmarks handle deduplication
 
 def mark_processed(file_path: str):
     """Mark file as processed."""

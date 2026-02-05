@@ -5,6 +5,7 @@ Enable cron-based scheduling via Glue SCHEDULED triggers.
 
 from typing import Callable, Optional, Dict
 from dataclasses import dataclass
+from alur.core.registry import Registry
 
 
 @dataclass
@@ -19,10 +20,8 @@ class Schedule:
     max_concurrent_runs: int = 1
 
 
-class ScheduleRegistry:
+class ScheduleRegistry(Registry[Schedule]):
     """Global registry for pipeline schedules."""
-
-    _schedules: Dict[str, Schedule] = {}
 
     @classmethod
     def register(cls, schedule: Schedule) -> None:
@@ -35,44 +34,13 @@ class ScheduleRegistry:
         Raises:
             ValueError: If a schedule for this pipeline is already registered
         """
-        if schedule.pipeline_name in cls._schedules:
-            raise ValueError(
-                f"Schedule for pipeline '{schedule.pipeline_name}' is already registered. "
-                "Each pipeline can only have one schedule."
-            )
-        cls._schedules[schedule.pipeline_name] = schedule
-
-    @classmethod
-    def get(cls, pipeline_name: str) -> Optional[Schedule]:
-        """
-        Get schedule for a specific pipeline.
-
-        Args:
-            pipeline_name: Name of the pipeline
-
-        Returns:
-            Schedule instance or None if not found
-        """
-        return cls._schedules.get(pipeline_name)
-
-    @classmethod
-    def get_all(cls) -> Dict[str, Schedule]:
-        """Get all registered schedules."""
-        return cls._schedules.copy()
+        # Use parent's register which handles duplicate checking
+        super().register(schedule.pipeline_name, schedule)
 
     @classmethod
     def get_enabled(cls) -> Dict[str, Schedule]:
         """Get only enabled schedules."""
-        return {
-            name: schedule
-            for name, schedule in cls._schedules.items()
-            if schedule.enabled
-        }
-
-    @classmethod
-    def clear(cls) -> None:
-        """Clear all schedules (useful for testing and code generation)."""
-        cls._schedules.clear()
+        return cls.get_filtered(lambda s: s.enabled)
 
 
 def schedule(

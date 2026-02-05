@@ -25,7 +25,7 @@ Edit `config/settings.py` with your AWS account details:
 - AWS region
 - S3 bucket names (must be globally unique)
 - Glue database name
-- DynamoDB state table name
+- Glue database name
 
 ### 3. Define Your Tables
 

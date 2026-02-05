@@ -1,10 +1,23 @@
 """
 Batch CSV ingestion utilities (bronze-only).
 
+⚠️ DEPRECATION WARNING:
+This module is deprecated and will be removed in a future version.
+Please use `alur.ingestion.load_to_bronze()` instead, which provides:
+- File-level idempotency (no duplicate processing)
+- Better error handling and retry support
+- Accurate row count tracking
+- Unified interface for all ingestion
+
 Scope:
 - Read CSV from S3 (s3://bucket/prefix/*.csv)
 - Validate CSV header + sample rows against a BronzeTable contract
 - Write validated CSV bytes into a bronze S3 bucket
+
+LIMITATIONS:
+- No idempotency (will reprocess files on every run)
+- No row count tracking
+- CSV-to-CSV only (does not convert to Parquet)
 """
 
 from __future__ import annotations
@@ -16,10 +29,8 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Type
 import csv
 import fnmatch
 import io
-from urllib.parse import urlparse
 
-import boto3
-
+from alur.utils.aws_helpers import S3Path, AWSClientFactory
 from alur.core.contracts import BronzeTable
 from alur.core.fields import (
     BooleanField,
@@ -49,15 +60,17 @@ class S3CsvSource:
     uri: str
     source_system: Optional[str] = None
 
+    def __post_init__(self):
+        # Validate S3 URI during initialization
+        object.__setattr__(self, '_s3_path', S3Path.from_uri(self.uri))
+
     @property
     def bucket(self) -> str:
-        parsed = urlparse(self.uri)
-        return parsed.netloc
+        return self._s3_path.bucket
 
     @property
     def key_pattern(self) -> str:
-        parsed = urlparse(self.uri)
-        return parsed.path.lstrip("/")
+        return self._s3_path.key
 
 
 @dataclass(frozen=True)
@@ -242,11 +255,36 @@ def ingest_csv_sources_to_bronze(
     """
     Batch ingest CSVs from one or more S3 sources to a bronze S3 bucket.
 
+    ⚠️ DEPRECATED: Use `alur.ingestion.load_to_bronze()` instead.
+    This function lacks idempotency and will reprocess files on every run.
+
     Writes the raw CSV bytes (after validation) to:
       s3://{bronze_bucket}/{dest_prefix}{table_name}/{source_bucket}/{source_key}
+
+    IMPORTANT LIMITATIONS:
+    - No idempotency tracking (will duplicate data on retries)
+    - No row count tracking
+    - CSV-to-CSV copy only (not converted to Parquet)
+
+    For production use, migrate to:
+        from alur.ingestion import load_to_bronze
+        df = load_to_bronze(
+            spark,
+            source_path="s3://bucket/*.csv",
+            source_system="your_system",
+            target=YourBronzeTable
+        )
     """
+    import warnings
+    warnings.warn(
+        "ingest_csv_sources_to_bronze() is deprecated and will be removed in a future version. "
+        "Use alur.ingestion.load_to_bronze() instead for idempotent ingestion.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+
     started_at = _utc_now_iso()
-    s3_client = s3_client or boto3.client("s3")
+    s3_client = s3_client or AWSClientFactory.get_s3_client()
 
     table_name = contract.get_table_name()
     dest_prefix = "" if dest_prefix is None else dest_prefix.strip("/")
