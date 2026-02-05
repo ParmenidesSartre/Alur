@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "alur-framework"
+name = "alur"
 version = "0.7.5"
 description = "Cost-effective data lake framework designed for small and mid-size companies. Build production-grade data pipelines on AWS with zero idle costs using serverless Spark and automatic partition management."
 readme = "README.md"
